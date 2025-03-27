@@ -24,7 +24,6 @@ META_GREEDY: True
 
 # env specific
 ENV_NAME: "Seaquest"
-# ENV_NAME: "Breakout"
 ENV_KWARGS: {}
 
 # evaluation

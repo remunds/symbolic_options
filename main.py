@@ -13,7 +13,8 @@ from symbolic_options.reward_functions.seaquest import collect_divers_reward, fi
 
 def outer_make_train(config):
 
-    if config.get("ENV_NAME", None) == "Seaquest": 
+    if config.get("ENV_NAME", None) == "Seaquest":
+        # Shaped reward is overall reward function (not necessary, if only llm is used) 
         env = JaxSeaquest(reward_funcs=[collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward])
         renderer = Renderer_AtraJaxis()
     else:
