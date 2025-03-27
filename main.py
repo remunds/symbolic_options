@@ -1,0 +1,130 @@
+
+import os
+import time
+import copy
+import jax
+import wandb
+import hydra
+from omegaconf import OmegaConf
+from jaxtari.jax_seaquest import JaxSeaquest
+from symbolic_options.hierarchical_pqn import make_train
+
+def outer_make_train(config):
+    if config.get("ENV_NAME", None) == "Seaquest": 
+        env = JaxSeaquest()
+    else:
+        raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
+    return make_train( config, env)
+
+def single_run(config):#
+    # global curr_run
+    # global env_type
+
+    config = {**config, **config["alg"]}
+
+    alg_name = config.get("ALG_NAME", "pqn")
+    env_name = config["ENV_NAME"]
+    # env_type = JaxSeaquest
+
+    # env = JaxSeaquest()
+
+    curr_run = wandb.init(
+        entity=config["ENTITY"],
+        project=config["PROJECT"],
+        tags=[
+            alg_name.upper(),
+            env_name.upper(),
+            f"jax_{jax.__version__}",
+        ],
+        name=f'{config["ALG_NAME"]}_{config["ENV_NAME"]}',
+        config=config,
+        mode=config["WANDB_MODE"],
+    )
+
+    rng = jax.random.PRNGKey(config["SEED"])
+
+    t0 = time.time()
+    rngs = jax.random.split(rng, config["NUM_SEEDS"])
+    # train_vjit = jax.jit(jax.vmap(make_train(config)))
+    train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
+    outs = jax.block_until_ready(train_vjit(rngs))
+    print(f"Took {time.time()-t0} seconds to complete.")
+
+    if config.get("SAVE_PATH", None) is not None:
+        from jaxmarl.wrappers.baselines import save_params
+
+        model_states = outs["runner_state"][0]
+        save_dir = os.path.join(config["SAVE_PATH"], env_name)
+        os.makedirs(save_dir, exist_ok=True)
+        OmegaConf.save(
+            config,
+            os.path.join(
+                save_dir, f'{alg_name}_{env_name}_seed{config["SEED"]}_config.yaml'
+            ),
+        )
+
+        for i, rng in enumerate(rngs):
+            params = jax.tree_map(lambda x: x[i], model_states.params)
+            save_path = os.path.join(
+                save_dir,
+                f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}.safetensors',
+            )
+            save_params(params, save_path)
+
+
+def tune(default_config):
+    """Hyperparameter sweep with wandb."""
+
+    default_config = {**default_config, **default_config["alg"]}
+    print(default_config)
+    alg_name = default_config.get("ALG_NAME", "pqn")
+    env_name = default_config["ENV_NAME"]
+
+    def wrapped_make_train():
+        wandb.init(project=default_config["PROJECT"])
+
+        config = copy.deepcopy(default_config)
+        for k, v in dict(wandb.config).items():
+            config[k] = v
+
+        print("running experiment with params:", config)
+
+        rng = jax.random.PRNGKey(config["SEED"])
+        rngs = jax.random.split(rng, config["NUM_SEEDS"])
+        train_vjit = jax.jit(jax.vmap(make_train(config)))
+        outs = jax.block_until_ready(train_vjit(rngs))
+
+    sweep_config = {
+        "name": f"{alg_name}_{env_name}",
+        "method": "bayes",
+        "metric": {
+            "name": "test_returned_episode_returns",
+            "goal": "maximize",
+        },
+        "parameters": {
+            "LR": {
+                "min": 0.00001,
+                "max": 0.001,
+            },
+        },
+    }
+
+    wandb.login()
+    sweep_id = wandb.sweep(
+        sweep_config, entity=default_config["ENTITY"], project=default_config["PROJECT"]
+    )
+    wandb.agent(sweep_id, wrapped_make_train, count=1000)
+
+
+@hydra.main(version_base=None, config_path="./config", config_name="config")
+def main(config):
+    config = OmegaConf.to_container(config)
+    print("Config:\n", OmegaConf.to_yaml(config))
+    if config["HYP_TUNE"]:
+        tune(config)
+    else:
+        single_run(config)
+
+
+if __name__ == "__main__":
+    main(None)
