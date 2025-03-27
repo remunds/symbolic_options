@@ -6,7 +6,7 @@ import jax
 import wandb
 import hydra
 from omegaconf import OmegaConf
-from jaxtari.jax_seaquest import JaxSeaquest
+from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis
 from symbolic_options.hierarchical_pqn import make_train
 from symbolic_options.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper 
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy
@@ -15,6 +15,7 @@ def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest": 
         env = JaxSeaquest(reward_funcs=[collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward])
+        renderer = Renderer_AtraJaxis()
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
 
@@ -32,22 +33,16 @@ def outer_make_train(config):
         meta_policy = combined_meta_policy
     else:
         raise ValueError("Invalid meta policy")
-
-    return make_train( config, env, meta_policy)
+    
+    return make_train( config, env, meta_policy, renderer)
 
 def single_run(config):#
-    # global curr_run
-    # global env_type
-
     config = {**config, **config["alg"]}
 
     alg_name = config.get("ALG_NAME", "pqn")
     env_name = config["ENV_NAME"]
-    # env_type = JaxSeaquest
 
-    # env = JaxSeaquest()
-
-    curr_run = wandb.init(
+    wandb.init(
         entity=config["ENTITY"],
         project=config["PROJECT"],
         tags=[
@@ -64,7 +59,6 @@ def single_run(config):#
 
     t0 = time.time()
     rngs = jax.random.split(rng, config["NUM_SEEDS"])
-    # train_vjit = jax.jit(jax.vmap(make_train(config)))
     train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
     outs = jax.block_until_ready(train_vjit(rngs))
     print(f"Took {time.time()-t0} seconds to complete.")

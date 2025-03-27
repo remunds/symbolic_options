@@ -67,9 +67,8 @@ class CustomTrainState(TrainState):
     grad_steps: int = 0
 
 
-curr_run = None 
 video_thread = None
-env_type = None
+curr_renderer = None
 
 def video_callback(states, dones, step):
     global video_thread
@@ -81,9 +80,9 @@ def video_callback(states, dones, step):
     video_thread.start()
 
 def collect_video(states, dones, step):
-    video_folder = f"{curr_run.dir}/media/videos/"
+
+    video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
-    game_env = env_type(render=True)
     if isinstance(states, MultiRewardLogEnvState):
         states = states.env_state
 
@@ -92,19 +91,19 @@ def collect_video(states, dones, step):
     # or len of states.obs if no done is True
     if num_states == 0:
         num_states = len(jax.tree_util.tree_leaves(states.obs)[0])
-    # skip every 4th frame
-    frames = []
-    for i in range(0, num_states, 4):
-        env_state = jax.tree_map(lambda x: x[i], states) 
-        frames.append(game_env.render(env_state))
-    frames = np.array(frames)
+
+    rasters = jax.vmap(curr_renderer.render)(states)
+    # select every 4th frame (and only the first num_states)
+    frames = np.array(rasters[:num_states][::4],dtype=np.uint8)
     # shape currently is (N, H, W, 3)
     # but should be (N, 3, H, W)
     frames = np.transpose(frames, (0, 3, 2, 1))
     video = wandb.Video(frames, fps=64, format="mp4")
-    wandb.log({f"video_{step}": video}, step=curr_run.step)
+    wandb.log({f"video_{step}": video}, step=wandb.run.step)
 
-def make_train(config, env, meta_policy):
+def make_train(config, env, meta_policy, renderer):
+    global curr_renderer
+    curr_renderer = renderer
 
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -351,12 +350,6 @@ def make_train(config, env, meta_policy):
                                 mutable=["batch_stats"],
                             )  # (batch_size*2, num_actions)
 
-                            #TODO: add cond to use chosen_subpolicy here if meta
-                            # chosen_action_qvals = jnp.take_along_axis(
-                            #     q_vals,
-                            #     jnp.expand_dims(minibatch.action, axis=-1),
-                            #     axis=-1,
-                            # ).squeeze(axis=-1)
                             chosen_action_qvals = jax.lax.cond(
                                 state_idx == -1,
                                 lambda _: jnp.take_along_axis(
