@@ -10,11 +10,10 @@ import chex
 import optax
 import flax.linen as nn
 from flax.training.train_state import TrainState
-from symbolic_options.wrappers import MultiRewardLogWrapper, MultiRewardLogEnvState
 import wandb
 import threading
 
-from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy
+from symbolic_options.wrappers import MultiRewardLogEnvState
 
 class QNetwork(nn.Module):
     action_dim: int
@@ -105,7 +104,7 @@ def collect_video(states, dones, step):
     video = wandb.Video(frames, fps=64, format="mp4")
     wandb.log({f"video_{step}": video}, step=curr_run.step)
 
-def make_train(config, env):
+def make_train(config, env, meta_policy):
 
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -118,18 +117,6 @@ def make_train(config, env):
     assert (config["NUM_STEPS"] * config["NUM_ENVS"]) % config[
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
-    
-
-    # if config.get("ENV_NAME") == "Seaquest":    
-    #     #TODO: config to check if shaping or not
-    #     game_env = env#Seaquest(reward_funcs=[fight_enemies_reward, collect_divers_reward, upward_reward, shaped_reward])
-    # # elif config.get("ENV_NAME") == "Breakout":
-    # #     game_env = Breakout()
-    # else:
-    #     raise ValueError("Invalid env name")
-    env = MultiRewardLogWrapper(env)
-
-    config["TEST_NUM_STEPS"] = 10_000
 
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
@@ -137,23 +124,6 @@ def make_train(config, env):
     vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
         env.step#, in_axes=(0, 0, None)
     )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
-
-    meta_policy_string = config.get("META_POLICY", "llm")
-    if meta_policy_string == "llm":
-        meta_policy = llm_meta_policy
-    elif meta_policy_string == "learned":
-        meta_policy = learned_meta_policy
-    elif meta_policy_string == "conditional":
-        meta_policy = conditional_meta_policy
-    elif meta_policy_string == "combined":
-        meta_policy = combined_meta_policy
-    else:
-        raise ValueError("Invalid meta policy")
-    
-    # TODO for learned meta-q (multiplied with rules)
-    # we need two meta-policies: one learned, one conditional
-    # then: evaluate both and multiply the q-values
-    # then: select the best action based on the combined q-values
 
     # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):

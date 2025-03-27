@@ -8,13 +8,32 @@ import hydra
 from omegaconf import OmegaConf
 from jaxtari.jax_seaquest import JaxSeaquest
 from symbolic_options.hierarchical_pqn import make_train
+from symbolic_options.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper 
+from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy
 
 def outer_make_train(config):
+
     if config.get("ENV_NAME", None) == "Seaquest": 
-        env = JaxSeaquest()
+        env = JaxSeaquest(reward_funcs=[collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward])
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
-    return make_train( config, env)
+
+    env = FlattenObservationWrapper(env)
+    env = MultiRewardLogWrapper(env)
+
+    meta_policy_string = config.get("META_POLICY", "llm")
+    if meta_policy_string == "llm":
+        meta_policy = llm_meta_policy
+    elif meta_policy_string == "learned":
+        meta_policy = learned_meta_policy
+    elif meta_policy_string == "conditional":
+        meta_policy = conditional_meta_policy
+    elif meta_policy_string == "combined":
+        meta_policy = combined_meta_policy
+    else:
+        raise ValueError("Invalid meta policy")
+
+    return make_train( config, env, meta_policy)
 
 def single_run(config):#
     # global curr_run

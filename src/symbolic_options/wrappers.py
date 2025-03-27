@@ -25,7 +25,10 @@ class GymnaxWrapper(object):
 
 
 class FlattenObservationWrapper(GymnaxWrapper):
-    """Flatten the observations of the environment."""
+    """Transform the observations of the environment into jnp arrays and flatten.
+    Also changes position of state in the return tuple to comply with gymnax.
+    Always apply this wrapper first.
+    """
 
     #   def __init__(self, env: env.env):
     #     super().__init__(env)
@@ -34,10 +37,11 @@ class FlattenObservationWrapper(GymnaxWrapper):
         assert isinstance(
             self._env.observation_space(), spaces.Box
         ), "Only Box spaces are supported for now."
+        new_shape = (self._env.frame_stack_size * self._env.obs_size,)
         return spaces.Box(
             low=self._env.observation_space().low,
             high=self._env.observation_space().high,
-            shape=(np.prod(self._env.observation_space().shape),),
+            shape=new_shape,
             dtype=self._env.observation_space().dtype,
         )
 
@@ -45,8 +49,10 @@ class FlattenObservationWrapper(GymnaxWrapper):
     def reset(
         self, key: chex.PRNGKey
     ) -> Tuple[chex.Array, EnvState]:
-        obs, state = self._env.reset(key)
-        obs = jnp.reshape(obs, (-1,))
+        # state, obs, = self._env.reset(key)
+        state, obs, = self._env.reset()
+        obs = self._env.obs_to_flat_array(obs)
+        chex.assert_shape(obs, (self._env.obs_size * self._env.frame_stack_size,))
         return obs, state
 
     @functools.partial(jax.jit, static_argnums=(0,))
@@ -56,8 +62,10 @@ class FlattenObservationWrapper(GymnaxWrapper):
         state: EnvState,
         action: Union[int, float],
     ) -> Tuple[chex.Array, EnvState, float, bool, Any]:  # dict]:
-        obs, state, reward, done, info = self._env.step(key, state, action)
-        obs = jnp.reshape(obs, (-1,))
+        # state, obs, reward, done, info = self._env.step(key, state, action)
+        state, obs, reward, done, info = self._env.step(state, action)
+        obs = self._env.obs_to_flat_array(obs)
+        info = info._asdict()
         return obs, state, reward, done, info
 
 
@@ -71,9 +79,6 @@ class LogEnvState:
 
 class LogWrapper(GymnaxWrapper):
     """Log the episode returns and lengths."""
-
-    #   def __init__(self, env: env.env):
-    #     super().__init__(env)
 
     @functools.partial(jax.jit, static_argnums=(0,))
     def reset(
@@ -134,9 +139,6 @@ class MultiRewardLogEnvState:
 
 class MultiRewardLogWrapper(GymnaxWrapper):
     """Log the episode returns and lengths."""
-
-    #   def __init__(self, env: env.env):
-    #     super().__init__(env)
 
     @functools.partial(jax.jit, static_argnums=(0,))
     def reset(
