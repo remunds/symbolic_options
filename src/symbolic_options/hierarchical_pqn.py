@@ -15,7 +15,7 @@ import wandb
 import threading
 
 
-from symbolic_options.wrappers import MultiRewardLogEnvState
+from jaxtari.wrappers import MultiRewardLogEnvState
 
 class QNetwork(nn.Module):
     action_dim: int
