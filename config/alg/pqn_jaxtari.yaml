@@ -1,7 +1,8 @@
 # this is adapted from Atari configuration 
-ALG_NAME: "pqn_llm_test"
-TOTAL_TIMESTEPS: 1e7
-TOTAL_TIMESTEPS_DECAY: 1e7 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
+NAME_INITIALS: "RE"
+ALG_NAME: "pqn_conditional"
+TOTAL_TIMESTEPS: 100e7
+TOTAL_TIMESTEPS_DECAY: 100e7 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 128 # parallel environments
 NUM_STEPS: 32 # steps per environment in each update
 EPS_START: 1.0
@@ -19,8 +20,9 @@ GAMMA: 0.99
 LAMBDA: 0.65
 # META_POLICY: "combined" # llm, learned, conditional, combined
 # META_GREEDY: True
-META_POLICY: "llm" # llm, learned, conditional, combined
+META_POLICY: "conditional" # llm, learned, conditional, combined
 META_GREEDY: True
+META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
 
 # env specific
 ENV_NAME: "Seaquest"

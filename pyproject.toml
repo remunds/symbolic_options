@@ -11,6 +11,7 @@ dependencies = [
     "jaxtari",
     "omegaconf>=2.3.0",
     "optax>=0.2.4",
+    "rtpt>=0.0.4",
     "wandb[media]>=0.19.8",
 ]
 

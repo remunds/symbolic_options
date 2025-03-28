@@ -14,8 +14,12 @@ from symbolic_options.reward_functions.seaquest import collect_divers_reward, fi
 def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
-        # Shaped reward is overall reward function (not necessary, if only llm is used) 
-        env = JaxSeaquest(reward_funcs=[collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward])
+        # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
+        reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward]
+        # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
+        if config.get("META_SHAPED_REWARD", False):
+            reward_funcs.append(shaped_reward)
+        env = JaxSeaquest(reward_funcs=reward_funcs)
         renderer = Renderer_AtraJaxis()
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")

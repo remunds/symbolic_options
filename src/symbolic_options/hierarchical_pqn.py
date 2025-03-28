@@ -4,6 +4,7 @@ import jax.experimental
 import jax.numpy as jnp
 import numpy as np
 from typing import Any
+from rtpt import RTPT
 
 from flax.linen.initializers import constant, orthogonal
 import chex
@@ -12,6 +13,7 @@ import flax.linen as nn
 from flax.training.train_state import TrainState
 import wandb
 import threading
+
 
 from symbolic_options.wrappers import MultiRewardLogEnvState
 
@@ -101,10 +103,15 @@ def collect_video(states, dones, step):
     video = wandb.Video(frames, fps=64, format="mp4")
     wandb.log({f"video_{step}": video}, step=wandb.run.step)
 
+rtpt = None
+def rtpt_callback():
+    global rtpt
+    rtpt.step()
+
 def make_train(config, env, meta_policy, renderer):
     global curr_renderer
+    global rtpt
     curr_renderer = renderer
-
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
     )
@@ -116,6 +123,10 @@ def make_train(config, env, meta_policy, renderer):
     assert (config["NUM_STEPS"] * config["NUM_ENVS"]) % config[
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
+
+    rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
+    rtpt.start()
+
 
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
@@ -184,8 +195,9 @@ def make_train(config, env, meta_policy, renderer):
             return train_state
 
         # TODO: use config value to determine num_agents (shaped / env reward) 
-        num_agents = len(env.reward_funcs)-1 # -1 for shaped meta-reward
-        num_agents = 1 if num_agents == 0 else num_agents
+        num_agents = len(env.reward_funcs)
+        if config.get("META_SHAPED_REWARD", False):
+            num_agents -= 1 # remove one if shaped reward is given
 
         # create multiple agents
         # networks.append(meta_network)
@@ -206,7 +218,7 @@ def make_train(config, env, meta_policy, renderer):
 
         # TRAINING LOOP
         def _update_step(runner_state, unused):
-
+            
             train_states, meta_train_state, expl_state, test_metrics, rng = runner_state
 
             # SAMPLE PHASE
@@ -410,14 +422,6 @@ def make_train(config, env, meta_policy, renderer):
                 )
 
                 train_state = train_state.replace(n_updates=train_state.n_updates + 1)
-                # metrics = {
-                #     f"env_step_{state_idx}": train_state.timesteps,
-                #     f"update_steps_{state_idx}": train_state.n_updates,
-                #     f"env_frame_{state_idx}": train_state.timesteps * env.observation_space().shape[-1],
-                #     f"grad_steps_{state_idx}": train_state.grad_steps,
-                #     f"td_loss_{state_idx}": loss.mean(),
-                #     f"qvals_{state_idx}": qvals.mean(),
-                # }
                 metrics = {
                     "env_step": train_state.timesteps,
                     "update_steps": train_state.n_updates,
@@ -436,7 +440,9 @@ def make_train(config, env, meta_policy, renderer):
             
             meta_policy_string = config.get("META_POLICY", "llm")
             if meta_policy_string == "learned" or meta_policy_string == "combined":
-                meta_reward_idx = num_agents # num_agents reward is shaped or env reward 
+                meta_reward_idx = num_agents # num_agents reward is shaped or env reward
+                # note that the reward_idx works, because we add the env_reward to the end of all_rewards
+                # so we either select the shaped reward or the env reward
                 metrics_meta, meta_train_state = _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
                 metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
 
@@ -466,6 +472,8 @@ def make_train(config, env, meta_policy, renderer):
                     # wandb.log(metrics, step=metrics["update_steps"][0])
                     wandb.log(metrics, step=metrics["update_steps_0"])
                 jax.debug.callback(callback, metrics, original_rng)
+            # update rtpt
+            jax.debug.callback(rtpt_callback)
 
             runner_state = (train_states, meta_train_state, tuple(expl_state), test_metrics, rng)
 
