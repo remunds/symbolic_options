@@ -8,13 +8,15 @@ import hydra
 from omegaconf import OmegaConf
 from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis
 from symbolic_options.hierarchical_pqn import make_train
-from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper 
-from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy
+from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
+from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy 
 
 def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
+        # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
+        # this makes sure that there is always a fallback if no rule evaluates to true
         reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward]
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
         if config.get("META_SHAPED_REWARD", False):
@@ -25,6 +27,7 @@ def outer_make_train(config):
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
 
     env = FlattenObservationWrapper(env)
+    # env = AtariWrapper(env)
     env = MultiRewardLogWrapper(env)
 
     meta_policy_string = config.get("META_POLICY", "llm")
@@ -38,7 +41,7 @@ def outer_make_train(config):
         meta_policy = combined_meta_policy
     else:
         raise ValueError("Invalid meta policy")
-    
+
     return make_train( config, env, meta_policy, renderer)
 
 def single_run(config):#
@@ -65,6 +68,11 @@ def single_run(config):#
     t0 = time.time()
     rngs = jax.random.split(rng, config["NUM_SEEDS"])
     train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
+    # time compilation  
+    print("Compiling...")
+    start = time.time()
+    train_vjit.lower(rngs).compile()
+    print(f"Compilation took {time.time()-start} seconds.")
     outs = jax.block_until_ready(train_vjit(rngs))
     print(f"Took {time.time()-t0} seconds to complete.")
 

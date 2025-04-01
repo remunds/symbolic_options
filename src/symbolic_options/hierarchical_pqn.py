@@ -60,6 +60,7 @@ class Transition:
     done: chex.Array
     next_obs: chex.Array
     q_val: chex.Array
+    meta_q_val: chex.Array
 
 
 class CustomTrainState(TrainState):
@@ -90,9 +91,9 @@ def collect_video(states, dones, step):
 
     # num_states is where the first done is True
     num_states = jnp.argmax(dones)
-    # or len of states.obs if no done is True
+    # or len of the first array of the states pytree
     if num_states == 0:
-        num_states = len(jax.tree_util.tree_leaves(states.obs)[0])
+        num_states = len(states[0])
 
     rasters = jax.vmap(curr_renderer.render)(states)
     # select every 4th frame (and only the first num_states)
@@ -123,6 +124,11 @@ def make_train(config, env, meta_policy, renderer):
     assert (config["NUM_STEPS"] * config["NUM_ENVS"]) % config[
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
+
+
+    config["NUM_AGENTS"] = len(env.reward_funcs)
+    config["OBS_SHAPE"] = env.observation_space().shape
+    config["NUM_ACTIONS"] = env.action_space().n
 
     rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
     rtpt.start()
@@ -172,13 +178,13 @@ def make_train(config, env, meta_policy, renderer):
 
         # INIT NETWORK AND OPTIMIZER
         network = QNetwork(
-            action_dim=env.action_space().n,
+            action_dim=config["NUM_ACTIONS"],
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
 
         def create_agent(rng, network):
-            obs_len = np.prod(env.observation_space().shape)
+            obs_len = np.prod(config["OBS_SHAPE"])
             init_x = jnp.zeros(obs_len)
             network_variables = network.init(rng, init_x, train=False)
             tx = optax.chain(
@@ -194,8 +200,7 @@ def make_train(config, env, meta_policy, renderer):
             )
             return train_state
 
-        # TODO: use config value to determine num_agents (shaped / env reward) 
-        num_agents = len(env.reward_funcs)
+        num_agents = config.get("NUM_AGENTS", 1)
         if config.get("META_SHAPED_REWARD", False):
             num_agents -= 1 # remove one if shaped reward is given
 
@@ -255,8 +260,8 @@ def make_train(config, env, meta_policy, renderer):
                     combined_q = agent_probs * max_q_vals # (128,3)
                 else:
                     combined_q = active_agent_q_vals 
-                # select active agent with highest q_val * valuation
-                # NOTE: instead of greedy, we could also sample from the distribution
+
+                # select active agent with highest q_val * valuation (or sample)
                 if config.get("META_GREEDY", True): 
                     active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
                 else:
@@ -287,6 +292,7 @@ def make_train(config, env, meta_policy, renderer):
                     done=new_done,
                     next_obs=new_obs,
                     q_val=q_vals,
+                    meta_q_val=active_agent_q_vals
                 )
                 return (new_obs, new_env_state, rng), (transition, info)
 
@@ -331,7 +337,16 @@ def make_train(config, env, meta_policy, renderer):
                     lambda_returns = (
                         1 - transition.done
                     ) * lambda_returns + transition.done * transition.rewards[... , state_idx]
-                    next_q = jnp.max(transition.q_val, axis=-1)
+                    next_q = jax.lax.cond(
+                        state_idx == -1,
+                        lambda _: jnp.max(transition.meta_q_val, axis=-1),
+                        lambda _: jnp.max(transition.q_val, axis=-1),
+                        operand=None,
+                    )
+                    # if state_idx == -1:
+                    #     next_q = jnp.max(transition.meta_q_val, axis=-1)
+                    # else:
+                    #     next_q = jnp.max(transition.q_val, axis=-1)
                     return (lambda_returns, next_q), lambda_returns
 
                 last_q = last_q * (1 - transitions.done[-1])
@@ -376,7 +391,8 @@ def make_train(config, env, meta_policy, renderer):
                                 ).squeeze(axis=-1),
                                 operand=None,
                             ) 
-
+                            # TODO: for meta, check if chosen_action_qvals and target are multiplied with the rule
+                            # chosen_action_qvals: qvals[active_agent], q_vals come from just the network(!)
                             loss = 0.5 * jnp.square(chosen_action_qvals - target).mean()
 
                             return loss, (updates, chosen_action_qvals)
@@ -425,7 +441,8 @@ def make_train(config, env, meta_policy, renderer):
                 metrics = {
                     "env_step": train_state.timesteps,
                     "update_steps": train_state.n_updates,
-                    "env_frame": train_state.timesteps * env.observation_space().shape[-1],
+                    # "env_frame": train_state.timesteps * env.observation_space().shape[-1],
+                    "env_frame": train_state.timesteps * config["OBS_SHAPE"][-1],
                     "grad_steps": train_state.grad_steps,
                     "td_loss": loss.mean(),
                     "qvals": qvals.mean(),
