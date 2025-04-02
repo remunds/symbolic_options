@@ -12,7 +12,7 @@ def idle_reward(prev_state: SeaquestState, state: SeaquestState):
 @jax.jit
 def collect_divers_reward(prev_state: SeaquestState, state: SeaquestState):
     # return 3 if a new diver was collected
-    reward = jnp.where(state.divers_collected > prev_state.divers_collected, 3, 0)
+    reward = jnp.where(state.divers_collected > prev_state.divers_collected, 1, 0)
     # dying punishment
     reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
@@ -31,7 +31,7 @@ def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
 @jax.jit
 def upward_reward(prev_state: SeaquestState, state: SeaquestState):
     # return 1 if player is moving up 
-    reward = jnp.where(state.player_y == prev_state.player_y-1, 0.1, 0)
+    reward = jnp.where(state.player_y == prev_state.player_y-1, 0.01, 0)
     # dying punishment
     reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
@@ -40,11 +40,11 @@ def upward_reward(prev_state: SeaquestState, state: SeaquestState):
 def shaped_reward(prev_state: SeaquestState, state: SeaquestState):
     # combine all rewards (+surface with 6 divers reward)
     #TODO: this is a try of balancing the rewards (make collecting divers more valuable than fighting enemies, and encouraging moving up)
-    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state) + 10*upward_reward(prev_state, state)
-    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 100, reward)
+    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state) + upward_reward(prev_state, state)
+    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 1000, reward)
     return reward
 
-@jax.jit
+# @jax.jit
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     """
     Mutually exclusive.
@@ -240,3 +240,16 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Seaques
     combined_q_vals = conditional_q_vals * learned_q_vals
     # jax.debug.print("combined: {}", combined_q_vals[0])
     return combined_q_vals
+
+def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state: SeaquestState):
+    # combine learned and conditional meta policy
+    # conditional_q_vals = conditional_meta_policy(network, meta_train_state, last_obs, env_state)
+    llm_q_vals = llm_meta_policy(network, meta_train_state, last_obs, env_state)
+    conditional_q_vals = shoot_default_policy(network, meta_train_state, last_obs, env_state)
+    # conditional_q_vals = divers_default_policy(network, meta_train_state, last_obs, env_state)
+    # jax.debug.print("cond: {}", conditional_q_vals[0])
+    learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
+    # jax.debug.print("learned: {}", learned_q_vals[0])
+    combined_q_vals = conditional_q_vals * learned_q_vals
+    # jax.debug.print("combined: {}", combined_q_vals[0])
+    return llm_q_vals, combined_q_vals

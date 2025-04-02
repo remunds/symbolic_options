@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis
 from symbolic_options.hierarchical_pqn import make_train
 from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
-from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy 
+from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy, combined_meta_policy_explicit
 
 def outer_make_train(config):
 
@@ -38,7 +38,10 @@ def outer_make_train(config):
     elif meta_policy_string == "conditional":
         meta_policy = conditional_meta_policy
     elif meta_policy_string == "combined":
-        meta_policy = combined_meta_policy
+        if config.get("LLM_PRETRAIN", 0) > 0:
+            meta_policy = combined_meta_policy_explicit
+        else:
+            meta_policy = combined_meta_policy
     else:
         raise ValueError("Invalid meta policy")
 

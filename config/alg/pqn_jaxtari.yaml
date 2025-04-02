@@ -21,7 +21,7 @@ LAMBDA: 0.65
 META_POLICY: "combined" # llm, learned, conditional, combined
 META_GREEDY: True
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
-# META_PRETRAIN: True
+LLM_PRETRAIN: 65000 # sets n_updates to pretrain. Only applicable for combined and conditional
 
 # env specific
 ENV_NAME: "Seaquest"

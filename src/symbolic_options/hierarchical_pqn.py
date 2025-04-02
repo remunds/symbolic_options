@@ -258,8 +258,20 @@ def make_train(config, env, meta_policy, renderer):
                     max_q_vals = jnp.transpose(max_q_vals) # (128,3)
                     # combine agent_probs with max q_vals of all agents
                     combined_q = agent_probs * max_q_vals # (128,3)
+                elif config.get("LLM_PRETRAIN") > 0:
+                    # meta_policy returns both seperated
+                    llm_q, both_q = active_agent_q_vals
+                    combined_q = jax.lax.cond(
+                        train_states.n_updates[0] < config["LLM_PRETRAIN"],
+                        # train_states.n_updates < config["LLM_PRETRAIN"],
+                        lambda _: llm_q,
+                        lambda _: both_q,
+                        operand=None,   
+                    ) 
                 else:
                     combined_q = active_agent_q_vals 
+
+                # allow for precomputation: use llm meta-policy for first N update-steps, switch to learnining afterwards
 
                 # select active agent with highest q_val * valuation (or sample)
                 if config.get("META_GREEDY", True): 
@@ -292,7 +304,8 @@ def make_train(config, env, meta_policy, renderer):
                     done=new_done,
                     next_obs=new_obs,
                     q_val=q_vals,
-                    meta_q_val=active_agent_q_vals
+                    # meta_q_val=active_agent_q_vals
+                    meta_q_val=combined_q
                 )
                 return (new_obs, new_env_state, rng), (transition, info)
 
@@ -460,8 +473,27 @@ def make_train(config, env, meta_policy, renderer):
                 meta_reward_idx = num_agents # num_agents reward is shaped or env reward
                 # note that the reward_idx works, because we add the env_reward to the end of all_rewards
                 # so we either select the shaped reward or the env reward
-                metrics_meta, meta_train_state = _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
-                metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
+                if not config.get("LLM_PRETRAIN", 0) > 0: 
+                    metrics_meta, meta_train_state = _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
+                    metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
+                else:
+                    # if n_updates > config["LLM_PRETRAIN"], we want to use the learned meta-policy
+                    def fake_update_agent(train_state, state_idx, rng, network): 
+                        train_state = train_state.replace(
+                            timesteps=train_state.timesteps
+                            + config["NUM_STEPS"] * config["NUM_ENVS"]
+                        )
+                        metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
+                        return metrics_meta, train_state
+
+                    metrics_meta, meta_train_state = jax.lax.cond(
+                        train_states.n_updates[0] > config["LLM_PRETRAIN"],
+                        lambda _: _update_agent(meta_train_state, meta_reward_idx, rng, meta_network),
+                        lambda _: fake_update_agent(meta_train_state, meta_reward_idx, rng, meta_network), 
+                        operand=None,
+                    )
+                    metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
+
 
             metrics.update({k: jnp.nanmean(v) for k, v in infos.items()}),
 
@@ -538,6 +570,16 @@ def make_train(config, env, meta_policy, renderer):
                     max_q_vals = jnp.transpose(max_q_vals) # (128,3)
                     # combine agent_probs with max q_vals of all agents
                     combined_q = agent_probs * max_q_vals # (128,3)
+                elif config.get("LLM_PRETRAIN", 0) > 0:
+                    # meta_policy returns both seperated
+                    llm_q, both_q = active_agent_q_vals
+                    combined_q = jax.lax.cond(
+                        train_states.n_updates[0] < config["LLM_PRETRAIN"],
+                        # train_states.n_updates < config["LLM_PRETRAIN"],
+                        lambda _: llm_q,
+                        lambda _: both_q,
+                        operand=None,   
+                    ) 
                 else:
                     combined_q = active_agent_q_vals 
 
