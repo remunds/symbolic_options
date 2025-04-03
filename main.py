@@ -6,8 +6,10 @@ import jax
 import wandb
 import hydra
 from omegaconf import OmegaConf
-from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis
-from symbolic_options.hierarchical_pqn import make_train
+from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis as SeaquestRenderer
+from jaxtari.jax_kangaroo import Kangaroo as JaxKangaroo, Renderer as KangarooRenderer
+from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier
+from symbolic_options.pqn_jaxtari import make_train
 from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy, combined_meta_policy_explicit
 
@@ -22,7 +24,10 @@ def outer_make_train(config):
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
         env = JaxSeaquest(reward_funcs=reward_funcs)
-        renderer = Renderer_AtraJaxis()
+        renderer = SeaquestRenderer()
+    elif config.get("ENV_NAME", None) == "Kangaroo":
+        env = JaxKangaroo()
+        renderer = KangarooRenderer() 
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
 
@@ -44,6 +49,11 @@ def outer_make_train(config):
             meta_policy = combined_meta_policy
     else:
         raise ValueError("Invalid meta policy")
+    
+    if config.get("HIERARCHICAL", False):
+        make_train_fn = make_train_hier
+    else:
+        make_train_fn = make_train
 
     return make_train( config, env, meta_policy, renderer)
 
@@ -145,7 +155,7 @@ def tune(default_config):
     wandb.agent(sweep_id, wrapped_make_train, count=1000)
 
 
-@hydra.main(version_base=None, config_path="./config", config_name="config")
+@hydra.main(version_base=None, config_path="./src/symbolic_options/config", config_name="config")
 def main(config):
     config = OmegaConf.to_container(config)
     print("Config:\n", OmegaConf.to_yaml(config))
