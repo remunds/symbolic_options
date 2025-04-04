@@ -2,6 +2,7 @@ import os
 import jax
 import jax.experimental
 import jax.numpy as jnp
+from jaxtari.renderers import AtraJaxisRenderer, PyGameRenderer
 import numpy as np
 from typing import Any
 from rtpt import RTPT
@@ -13,6 +14,7 @@ import flax.linen as nn
 from flax.training.train_state import TrainState
 import wandb
 import threading
+import pygame
 
 
 from jaxtari.wrappers import MultiRewardLogEnvState
@@ -73,16 +75,27 @@ class CustomTrainState(TrainState):
 video_thread = None
 curr_renderer = None
 
-def video_callback(states, dones, step):
+def video_callback(states, active_agents, dones, step):
     global video_thread
+    global curr_renderer
+    if curr_renderer is None:
+        print("Renderer is None, skipping video generation")
+        return
+
     if video_thread is not None and video_thread.is_alive():
         print("Thread is still running, skipping video generation")
         return
     
-    video_thread = threading.Thread(target=collect_video, args=(states, dones, step))
+    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, dones, step))
     video_thread.start()
 
-def collect_video(states, dones, step):
+def add_active_agent(screen, active_agent_num: int):
+    font = pygame.font.Font(None, 50)
+    # text_surface = font.render(str(active_agent_num), True, (255, 255, 255)) 
+    text_surface = font.render(f"active agent: {active_agent_num}", True, (255, 255, 255)) 
+    screen.blit(text_surface, (300, 300)) 
+
+def collect_video(states, active_agents, dones, step):
 
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
@@ -95,9 +108,30 @@ def collect_video(states, dones, step):
     if num_states == 0:
         num_states = len(states[0])
 
-    rasters = jax.vmap(curr_renderer.render)(states)
-    # select every 4th frame (and only the first num_states)
-    frames = np.array(rasters[:num_states][::4],dtype=np.uint8)
+    if isinstance(curr_renderer, AtraJaxisRenderer):
+        rasters = jax.vmap(curr_renderer.render)(states)
+        # select every 4th frame (and only the first num_states)
+        frames = np.array(rasters[:num_states][::4],dtype=np.uint8)
+    elif isinstance(curr_renderer, PyGameRenderer):
+        pygame.init()
+        # select every 4th frame (and only the first num_states)
+        states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states][::4], states)
+        reduced_state_num = jax.tree_util.tree_leaves(states_reduced)[0].shape[0]
+        frames = [] 
+        for i in range(reduced_state_num):
+            # select i'th frame of every state
+            states_i = jax.tree_util.tree_map(lambda x: x[i], states_reduced)
+            curr_renderer.render(states_i)
+            add_active_agent(curr_renderer.screen, active_agents[i]) 
+            frame = pygame.surfarray.array3d(curr_renderer.screen)
+            frames.append(frame)
+
+        # convert to numpy array
+        frames = np.array(frames, dtype=np.uint8)
+
+    else:
+        print("Renderer is not known, skipping video generation")
+        return
     # shape currently is (N, H, W, 3)
     # but should be (N, 3, H, W)
     frames = np.transpose(frames, (0, 3, 2, 1))
@@ -595,6 +629,7 @@ def make_train(config, env, meta_policy, renderer):
                     active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
 
                 # active_agent shape: (num_envs)
+                active_agent_vid = active_agent[0]
                 # select the actions of the active agent 
                 action = actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
 
@@ -631,7 +666,7 @@ def make_train(config, env, meta_policy, renderer):
                     all_done, active_rewards, new_prev_rewards
                 )
 
-                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, done[0])
+                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = vmap_reset(config["TEST_NUM_ENVS"])(_rng)
@@ -640,12 +675,12 @@ def make_train(config, env, meta_policy, renderer):
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, init_rewards, _rng), None, config["TEST_NUM_STEPS"]
             )
-            infos, states, dones = output
+            infos, states, active_agents, dones = output
 
             if config.get("RECORD_VIDEO", False):
                 jax.lax.cond(
                     train_states.n_updates[0] > 0,
-                    lambda _: jax.debug.callback(video_callback, states, dones, train_states.n_updates[0]),
+                    lambda _: jax.debug.callback(video_callback, states, active_agents, dones, train_states.n_updates[0]),
                     lambda _: None,
                     operand=None,
                 )

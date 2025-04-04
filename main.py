@@ -11,11 +11,13 @@ from jaxtari.jax_kangaroo import Kangaroo as JaxKangaroo, Renderer as KangarooRe
 from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier
 from symbolic_options.pqn_jaxtari import make_train
 from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
-from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy, combined_meta_policy_explicit
+from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
+from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
 
 def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
+        from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy, combined_meta_policy_explicit
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
@@ -26,7 +28,9 @@ def outer_make_train(config):
         env = JaxSeaquest(reward_funcs=reward_funcs)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        env = JaxKangaroo()
+        from symbolic_options.reward_functions.kangaroo import llm_meta_policy
+        reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
+        env = JaxKangaroo(reward_funcs=reward_funcs)
         renderer = KangarooRenderer() 
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
@@ -55,7 +59,7 @@ def outer_make_train(config):
     else:
         make_train_fn = make_train
 
-    return make_train( config, env, meta_policy, renderer)
+    return make_train_fn( config, env, meta_policy, renderer)
 
 def single_run(config):#
     config = {**config, **config["alg"]}
