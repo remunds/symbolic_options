@@ -143,8 +143,8 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     
     # default is navigation
 
-    # if fruit or bell is close, collect fruits
-    max_fruit_dist_sq = 40 ** 2
+    # if fruit or bell is close, collect fruit/activate bell
+    max_fruit_dist_sq = 30 ** 2
     fruit_mask = jnp.where(state.level.fruit_actives != 0, 1, 0) #(128, 3)
     dx = state.level.fruit_positions[..., 0] - state.player.x[:, None] #(128, 3)
     dy = state.level.fruit_positions[..., 1] - state.player.y[:, None] #(128, 3)
@@ -212,7 +212,7 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     # 0: navigate, 1: handle enemies, 2: collect fruits
 
     # if fruit or bell is close, collect fruits
-    max_fruit_dist_sq = 50 ** 2
+    max_fruit_dist_sq = 30 ** 2
     fruit_mask = jnp.where(state.level.fruit_actives != 0, 1, 0) #(128, 3)
     dx = state.level.fruit_positions[..., 0] - state.player.x[:, None] #(128, 3)
     dy = state.level.fruit_positions[..., 1] - state.player.y[:, None] #(128, 3)
@@ -238,7 +238,7 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     fruit_q = jax.nn.one_hot(decision, 3)
 
     # if enemy is close, handle enemies
-    danger_dist_sq = 45 ** 2
+    danger_dist_sq = 35 ** 2
     active_mask = jnp.where(state.level.monkey_states != 0, 1, 0) #(128, 4)
 
     dx = state.level.monkey_positions[..., 0] - state.player.x[:, None] #(128, 4)

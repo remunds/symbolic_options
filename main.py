@@ -8,11 +8,23 @@ import hydra
 from omegaconf import OmegaConf
 from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis as SeaquestRenderer
 from jaxtari.jax_kangaroo import Kangaroo as JaxKangaroo, Renderer as KangarooRenderer
-from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier
-from symbolic_options.pqn_jaxtari import make_train
+from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxtari
+from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxtari
+
+# from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jax
+from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
+
 from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
+
+from craftax.craftax_env import make_craftax_env_from_name
+from symbolic_options.purejaxql.craftax_wrappers import (
+    LogWrapper,
+    OptimisticResetVecEnvWrapper,
+    BatchEnvWrapper,
+)
+from symbolic_options.purejaxql.batch_renorm import BatchRenorm
 
 def outer_make_train(config):
 
@@ -27,39 +39,72 @@ def outer_make_train(config):
             reward_funcs.append(shaped_reward)
         env = JaxSeaquest(reward_funcs=reward_funcs)
         renderer = SeaquestRenderer()
+        env = FlattenObservationWrapper(env)
+        # env = AtariWrapper(env)
+        env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
         env = JaxKangaroo(reward_funcs=reward_funcs)
         renderer = KangarooRenderer() 
+        env = FlattenObservationWrapper(env)
+        # env = AtariWrapper(env)
+        env = MultiRewardLogWrapper(env)
+    elif config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
+        renderer = None
+        basic_env = make_craftax_env_from_name(
+            config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
+        )
+        env_params = basic_env.default_params
+        log_env = LogWrapper(basic_env)
+        if config["USE_OPTIMISTIC_RESETS"]:
+            env = OptimisticResetVecEnvWrapper(
+                log_env,
+                num_envs=config["NUM_ENVS"],
+                reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["NUM_ENVS"]),
+            )
+            test_env = OptimisticResetVecEnvWrapper(
+                log_env,
+                num_envs=config["TEST_NUM_ENVS"],
+                reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["TEST_NUM_ENVS"]),
+            )
+        else:
+            env = BatchEnvWrapper(log_env, num_envs=config["NUM_ENVS"])
+            test_env = BatchEnvWrapper(log_env, num_envs=config["TEST_NUM_ENVS"])
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
 
-    env = FlattenObservationWrapper(env)
-    # env = AtariWrapper(env)
-    env = MultiRewardLogWrapper(env)
-
-    meta_policy_string = config.get("META_POLICY", "llm")
-    if meta_policy_string == "llm":
-        meta_policy = llm_meta_policy
-    elif meta_policy_string == "learned":
-        meta_policy = learned_meta_policy
-    elif meta_policy_string == "conditional":
-        meta_policy = conditional_meta_policy
-    elif meta_policy_string == "combined":
-        if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False): 
-            meta_policy = combined_meta_policy_explicit
-        else:
-            meta_policy = combined_meta_policy
-    else:
-        raise ValueError("Invalid meta policy")
-    
     if config.get("HIERARCHICAL", False):
-        make_train_fn = make_train_hier
+        meta_policy_string = config.get("META_POLICY", "llm")
+        if meta_policy_string == "llm":
+            meta_policy = llm_meta_policy
+        elif meta_policy_string == "learned":
+            meta_policy = learned_meta_policy
+        elif meta_policy_string == "conditional":
+            meta_policy = conditional_meta_policy
+        elif meta_policy_string == "combined":
+            if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False): 
+                meta_policy = combined_meta_policy_explicit
+            else:
+                meta_policy = combined_meta_policy
+        else:
+            raise ValueError("Invalid meta policy")
     else:
-        make_train_fn = make_train
+        meta_policy = None
 
-    return make_train_fn( config, env, meta_policy, renderer)
+    if config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
+        # if config.get("HIERARCHICAL", False):
+        #     make_train_fn = make_train_hier_craftax
+        # else:
+        make_train_fn = make_train_pqn_craftax
+        return make_train_fn(config, env, test_env, env_params, meta_policy, renderer)
+    else:
+        if config.get("HIERARCHICAL", False):
+            make_train_fn = make_train_hier_jaxtari
+        else:
+            make_train_fn = make_train_pqn_jaxtari
+
+    return make_train_fn(config, env, meta_policy, renderer)
 
 def single_run(config):#
     config = {**config, **config["alg"]}
@@ -134,7 +179,7 @@ def tune(default_config):
 
         rng = jax.random.PRNGKey(config["SEED"])
         rngs = jax.random.split(rng, config["NUM_SEEDS"])
-        train_vjit = jax.jit(jax.vmap(make_train(config)))
+        train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
         outs = jax.block_until_ready(train_vjit(rngs))
 
     sweep_config = {
