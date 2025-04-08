@@ -28,7 +28,7 @@ def outer_make_train(config):
         env = JaxSeaquest(reward_funcs=reward_funcs)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        from symbolic_options.reward_functions.kangaroo import llm_meta_policy
+        from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
         env = JaxKangaroo(reward_funcs=reward_funcs)
         renderer = KangarooRenderer() 
@@ -47,7 +47,7 @@ def outer_make_train(config):
     elif meta_policy_string == "conditional":
         meta_policy = conditional_meta_policy
     elif meta_policy_string == "combined":
-        if config.get("LLM_PRETRAIN", 0) > 0:
+        if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False): 
             meta_policy = combined_meta_policy_explicit
         else:
             meta_policy = combined_meta_policy

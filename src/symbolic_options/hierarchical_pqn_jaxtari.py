@@ -122,7 +122,7 @@ def collect_video(states, active_agents, dones, step):
             # select i'th frame of every state
             states_i = jax.tree_util.tree_map(lambda x: x[i], states_reduced)
             curr_renderer.render(states_i)
-            add_active_agent(curr_renderer.screen, active_agents[i]) 
+            add_active_agent(curr_renderer.screen, active_agents[i*4]) 
             frame = pygame.surfarray.array3d(curr_renderer.screen)
             frames.append(frame)
 
@@ -292,16 +292,27 @@ def make_train(config, env, meta_policy, renderer):
                     max_q_vals = jnp.transpose(max_q_vals) # (128,3)
                     # combine agent_probs with max q_vals of all agents
                     combined_q = agent_probs * max_q_vals # (128,3)
-                elif config.get("LLM_PRETRAIN") > 0:
+                elif config.get("LLM_PRETRAIN", False):
                     # meta_policy returns both seperated
                     llm_q, both_q = active_agent_q_vals
                     combined_q = jax.lax.cond(
-                        train_states.n_updates[0] < config["LLM_PRETRAIN"],
-                        # train_states.n_updates < config["LLM_PRETRAIN"],
+                        train_states.n_updates[0] < config["PRETRAIN_LEN"],
                         lambda _: llm_q,
                         lambda _: both_q,
                         operand=None,   
-                    ) 
+                    )
+                elif config.get("RANDOM_PRETRAIN", False): 
+                    # meta_policy returns both seperated
+                    _, both_q = active_agent_q_vals
+                    random_q = jax.random.randint(
+                        rng_a, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
+                    ).astype(jnp.float32)
+                    combined_q = jax.lax.cond(
+                        train_states.n_updates[0] < config["PRETRAIN_LEN"],
+                        lambda _: random_q,
+                        lambda _: both_q,
+                        operand=None,   
+                    )
                 else:
                     combined_q = active_agent_q_vals 
 
@@ -507,7 +518,7 @@ def make_train(config, env, meta_policy, renderer):
                 meta_reward_idx = num_agents # num_agents reward is shaped or env reward
                 # note that the reward_idx works, because we add the env_reward to the end of all_rewards
                 # so we either select the shaped reward or the env reward
-                if not config.get("LLM_PRETRAIN", 0) > 0: 
+                if not (config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False)):
                     metrics_meta, meta_train_state = _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
                     metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
                 else:
@@ -521,7 +532,7 @@ def make_train(config, env, meta_policy, renderer):
                         return metrics_meta, train_state
 
                     metrics_meta, meta_train_state = jax.lax.cond(
-                        train_states.n_updates[0] > config["LLM_PRETRAIN"],
+                        train_states.n_updates[0] > config["PRETRAIN_LEN"],
                         lambda _: _update_agent(meta_train_state, meta_reward_idx, rng, meta_network),
                         lambda _: fake_update_agent(meta_train_state, meta_reward_idx, rng, meta_network), 
                         operand=None,
@@ -604,16 +615,29 @@ def make_train(config, env, meta_policy, renderer):
                     max_q_vals = jnp.transpose(max_q_vals) # (128,3)
                     # combine agent_probs with max q_vals of all agents
                     combined_q = agent_probs * max_q_vals # (128,3)
-                elif config.get("LLM_PRETRAIN", 0) > 0:
+                elif config.get("LLM_PRETRAIN", False): 
                     # meta_policy returns both seperated
                     llm_q, both_q = active_agent_q_vals
                     combined_q = jax.lax.cond(
-                        train_states.n_updates[0] < config["LLM_PRETRAIN"],
+                        train_states.n_updates[0] < config["PRETRAIN_LEN"],
                         # train_states.n_updates < config["LLM_PRETRAIN"],
                         lambda _: llm_q,
                         lambda _: both_q,
                         operand=None,   
-                    ) 
+                    )
+                elif config.get("RANDOM_PRETRAIN", False):
+                    # meta_policy returns both seperated
+                    _, both_q = active_agent_q_vals
+                    random_q = jax.random.randint(
+                        rng, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
+                    ).astype(jnp.float32)  # (128,3)
+                    # sample random actions,
+                    combined_q = jax.lax.cond(
+                        train_states.n_updates[0] < config["PRETRAIN_LEN"],
+                        lambda _: random_q,
+                        lambda _: both_q,
+                        operand=None,   
+                    )
                 else:
                     combined_q = active_agent_q_vals 
 
