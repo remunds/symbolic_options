@@ -72,74 +72,6 @@ class CustomTrainState(TrainState):
     n_updates: int = 0
     grad_steps: int = 0
 
-
-# video_thread = None
-# curr_renderer = None
-
-# def video_callback(states, active_agents, dones, step):
-#     global video_thread
-#     global curr_renderer
-#     if curr_renderer is None:
-#         print("Renderer is None, skipping video generation")
-#         return
-
-#     if video_thread is not None and video_thread.is_alive():
-#         print("Thread is still running, skipping video generation")
-#         return
-    
-#     video_thread = threading.Thread(target=collect_video, args=(states, active_agents, dones, step))
-#     video_thread.start()
-
-# def add_active_agent(screen, active_agent_num: int):
-#     font = pygame.font.Font(None, 50)
-#     # text_surface = font.render(str(active_agent_num), True, (255, 255, 255)) 
-#     text_surface = font.render(f"active agent: {active_agent_num}", True, (255, 255, 255)) 
-#     screen.blit(text_surface, (300, 300)) 
-
-# def collect_video(states, active_agents, dones, step):
-
-#     video_folder = f"{wandb.run.dir}/media/videos/"
-#     os.makedirs(video_folder, exist_ok=True)
-#     if isinstance(states, MultiRewardLogEnvState):
-#         states = states.env_state
-
-#     # num_states is where the first done is True
-#     num_states = jnp.argmax(dones)
-#     # or len of the first array of the states pytree
-#     if num_states == 0:
-#         num_states = len(states[0])
-
-#     if isinstance(curr_renderer, AtraJaxisRenderer):
-#         rasters = jax.vmap(curr_renderer.render)(states)
-#         # select every 4th frame (and only the first num_states)
-#         frames = np.array(rasters[:num_states][::4],dtype=np.uint8)
-#     elif isinstance(curr_renderer, PyGameRenderer):
-#         pygame.init()
-#         # select every 4th frame (and only the first num_states)
-#         states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states][::4], states)
-#         reduced_state_num = jax.tree_util.tree_leaves(states_reduced)[0].shape[0]
-#         frames = [] 
-#         for i in range(reduced_state_num):
-#             # select i'th frame of every state
-#             states_i = jax.tree_util.tree_map(lambda x: x[i], states_reduced)
-#             curr_renderer.render(states_i)
-#             if active_agents is not None:
-#                 add_active_agent(curr_renderer.screen, active_agents[i*4]) 
-#             frame = pygame.surfarray.array3d(curr_renderer.screen)
-#             frames.append(frame)
-
-#         # convert to numpy array
-#         frames = np.array(frames, dtype=np.uint8)
-
-#     else:
-#         print("Renderer is not known, skipping video generation")
-#         return
-#     # shape currently is (N, H, W, 3)
-#     # but should be (N, 3, H, W)
-#     frames = np.transpose(frames, (0, 3, 2, 1))
-#     video = wandb.Video(frames, fps=64, format="mp4")
-#     wandb.log({f"video_{step}": video}, step=wandb.run.step)
-
 rtpt = None
 def rtpt_callback():
     global rtpt
@@ -287,6 +219,8 @@ def make_train(config, env, meta_policy, renderer):
 
                 # active_agent_q_vals = meta_policy(env_state) # (128,3)
                 active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                # NOTE: Currently, the only way to explore is by sampling rather than greedy picking
+                # Instead, we could also do eps-greedy for the meta-policy...
                 # either select directly or combine with action_q_vals 
                 if config.get("META_POLICY", "llm") == "conditional":
                     agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1) # (128,3)
@@ -324,11 +258,14 @@ def make_train(config, env, meta_policy, renderer):
                 if config.get("META_GREEDY", True): 
                     active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
                 else:
-                    rng_s, _rng_s = jax.random.split(rng_s)
-                    #NOTE: not sure if this is the best way to create the log-distribution 
-                    combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
-                    combined_log_probs = jnp.log(combined_probs)
-                    active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
+                    # rng_s, _rng_s = jax.random.split(rng_s)
+                    # #NOTE: not sure if this is the best way to create the log-distribution 
+                    # combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
+                    # combined_log_probs = jnp.log(combined_probs)
+                    # active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
+                    _rng_s = jax.random.split(rng_s, config["NUM_ENVS"])
+                    eps = jnp.full(config["NUM_ENVS"], eps_scheduler(meta_train_state.n_updates))
+                    active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
 
                 # select the q_vals and action of the active agent
                 q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
@@ -648,11 +585,15 @@ def make_train(config, env, meta_policy, renderer):
                 if config.get("META_GREEDY", True): 
                     active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
                 else:
-                    rng, _rng_s = jax.random.split(rng)
-                    #NOTE: not sure if this is the best way to create the log-distribution 
-                    combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
-                    combined_log_probs = jnp.log(combined_probs)
-                    active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
+                    # rng, _rng_s = jax.random.split(rng)
+                    # #NOTE: not sure if this is the best way to create the log-distribution 
+                    # combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
+                    # combined_log_probs = jnp.log(combined_probs)
+                    # active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
+
+                    _rng_s = jax.random.split(rng, config["NUM_ENVS"])
+                    eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"])
+                    active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
 
                 # active_agent shape: (num_envs)
                 active_agent_vid = active_agent[0]

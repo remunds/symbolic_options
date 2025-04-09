@@ -169,7 +169,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     decision = jnp.where(fruit_bell_cond, 2, 0)
 
     # if enemy is close, handle enemies
-    danger_dist_sq = 35 ** 2
+    danger_dist_sq = 50 ** 2
     active_mask = jnp.where(state.level.monkey_states != 0, 1, 0) #(128, 4)
 
     dx = state.level.monkey_positions[..., 0] - state.player.x[:, None] #(128, 4)
