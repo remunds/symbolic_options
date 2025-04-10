@@ -86,27 +86,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
-    # basic_env = make_craftax_env_from_name(
-    #     config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
-    # )
-    # env_params = basic_env.default_params
-    # log_env = LogWrapper(basic_env)
-    # if config["USE_OPTIMISTIC_RESETS"]:
-    #     env = OptimisticResetVecEnvWrapper(
-    #         log_env,
-    #         num_envs=config["NUM_ENVS"],
-    #         reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["NUM_ENVS"]),
-    #     )
-    #     test_env = OptimisticResetVecEnvWrapper(
-    #         log_env,
-    #         num_envs=config["TEST_NUM_ENVS"],
-    #         reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["TEST_NUM_ENVS"]),
-    #     )
-    # else:
-    #     env = BatchEnvWrapper(log_env, num_envs=config["NUM_ENVS"])
-    #     test_env = BatchEnvWrapper(log_env, num_envs=config["TEST_NUM_ENVS"])
-
-    # epsilon-greedy exploration
+     # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):
         rng_a, rng_e = jax.random.split(
             rng

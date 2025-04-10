@@ -33,8 +33,8 @@ def navigate_reward(prev_state: KangarooState, state: KangarooState):
     x_diff = dx[closest_idx] - dx_prev[closest_idx]
     ladder_reward = -(x_diff) # reward for getting closer to ladder
 
-    # reward going up ladder
-    ladder_up_reward = -(state.player.y - prev_state.player.y)
+    # reward going up (e.g. ladder) TODO: just added the 3 here -> worth it?
+    ladder_up_reward = -3*(state.player.y - prev_state.player.y)
 
     dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
 
@@ -80,9 +80,6 @@ def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):
 
 @jax.jit
 def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
-    # collecting a fruit: if fewer active than before (they deactivate after collecting)
-    active_mask = jnp.where(state.level.fruit_actives != 0, 1, 0)
-
     # compute distance from fruits to player
     dx = jnp.abs(state.level.fruit_positions[..., 0] - state.player.x)
     dy = jnp.abs(state.level.fruit_positions[..., 1] - state.player.y) #(128, 3)
@@ -144,7 +141,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     # default is navigation
 
     # if fruit or bell is close, collect fruit/activate bell
-    max_fruit_dist_sq = 30 ** 2
+    max_fruit_dist_sq = 35 ** 2
     fruit_mask = jnp.where(state.level.fruit_actives != 0, 1, 0) #(128, 3)
     dx = state.level.fruit_positions[..., 0] - state.player.x[:, None] #(128, 3)
     dy = state.level.fruit_positions[..., 1] - state.player.y[:, None] #(128, 3)
@@ -212,7 +209,7 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     # 0: navigate, 1: handle enemies, 2: collect fruits
 
     # if fruit or bell is close, collect fruits
-    max_fruit_dist_sq = 30 ** 2
+    max_fruit_dist_sq = 35 ** 2
     fruit_mask = jnp.where(state.level.fruit_actives != 0, 1, 0) #(128, 3)
     dx = state.level.fruit_positions[..., 0] - state.player.x[:, None] #(128, 3)
     dy = state.level.fruit_positions[..., 1] - state.player.y[:, None] #(128, 3)
@@ -238,7 +235,7 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     fruit_q = jax.nn.one_hot(decision, 3)
 
     # if enemy is close, handle enemies
-    danger_dist_sq = 35 ** 2
+    danger_dist_sq = 50 ** 2
     active_mask = jnp.where(state.level.monkey_states != 0, 1, 0) #(128, 4)
 
     dx = state.level.monkey_positions[..., 0] - state.player.x[:, None] #(128, 4)

@@ -11,7 +11,7 @@ from jaxtari.jax_kangaroo import Kangaroo as JaxKangaroo, Renderer as KangarooRe
 from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxtari
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxtari
 
-# from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jax
+from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
 from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
 
 from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
@@ -51,6 +51,7 @@ def outer_make_train(config):
         # env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
+        from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
         renderer = None
         basic_env = make_craftax_env_from_name(
             config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
@@ -93,10 +94,10 @@ def outer_make_train(config):
         meta_policy = None
 
     if config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
-        # if config.get("HIERARCHICAL", False):
-        #     make_train_fn = make_train_hier_craftax
-        # else:
-        make_train_fn = make_train_pqn_craftax
+        if config.get("HIERARCHICAL", False):
+            make_train_fn = make_train_hier_craftax
+        else:
+            make_train_fn = make_train_pqn_craftax
         return make_train_fn(config, env, test_env, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
