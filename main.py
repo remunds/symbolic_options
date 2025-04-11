@@ -17,12 +17,14 @@ from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
 from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
+from symbolic_options.reward_functions.craftax import nav_to_ladder_reward, mine_reward, enemies_reward, intrinsics_reward 
 
 from craftax.craftax_env import make_craftax_env_from_name
 from symbolic_options.purejaxql.craftax_wrappers import (
     LogWrapper,
     OptimisticResetVecEnvWrapper,
     BatchEnvWrapper,
+    MultiRewardWrapper
 )
 from symbolic_options.purejaxql.batch_renorm import BatchRenorm
 
@@ -52,12 +54,19 @@ def outer_make_train(config):
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
         from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
+        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper
+        reward_funcs = [nav_to_ladder_reward, mine_reward, enemies_reward, intrinsics_reward]
         renderer = None
         basic_env = make_craftax_env_from_name(
             config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
         )
         env_params = basic_env.default_params
-        log_env = LogWrapper(basic_env)
+
+        if len(reward_funcs) > 0: 
+            basic_env = MultiRewardWrapper(basic_env, reward_funcs)
+            log_env = MultiRewardLogWrapper(basic_env)
+        else:
+            log_env = LogWrapper(basic_env)
         if config["USE_OPTIMISTIC_RESETS"]:
             env = OptimisticResetVecEnvWrapper(
                 log_env,
@@ -72,6 +81,7 @@ def outer_make_train(config):
         else:
             env = BatchEnvWrapper(log_env, num_envs=config["NUM_ENVS"])
             test_env = BatchEnvWrapper(log_env, num_envs=config["TEST_NUM_ENVS"])
+
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
 

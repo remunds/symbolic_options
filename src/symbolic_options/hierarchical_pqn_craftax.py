@@ -94,9 +94,9 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
 
-    #TODO: Change back once multiple reward_funcs is implemented
-    # config["NUM_AGENTS"] = len(env.reward_funcs)
-    config["NUM_AGENTS"] = 1 
+    config["NUM_AGENTS"] = len(env.reward_funcs)
+    #TODO: remove?
+    # config["NUM_AGENTS"] = 1 
     # config["OBS_SHAPE"] = env.observation_space(env_params).shape
     # config["NUM_ACTIONS"] = env.action_space(env_params).n
 
@@ -286,12 +286,13 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                     rng_s, env_state, new_action, env_params
                 )
 
-                #TODO: Change back
-                rewards = jnp.zeros((config["NUM_ENVS"], num_agents))
-                rewards = jnp.concatenate((reward[:,None], reward[:,None]), axis=1)
-                # rewards = info.pop("all_rewards") #(128,3)
+                #TODO: remove?
+                # rewards = jnp.zeros((config["NUM_ENVS"], num_agents))
+                # rewards = jnp.concatenate((reward[:,None], reward[:,None]), axis=1)
+
                 # add reward to end -> (128,N_rews+1)
-                # rewards = jnp.concatenate((rewards, reward[:, None]), axis=1)
+                rewards = info.pop("all_rewards") #(N_envs, N_rews)
+                rewards = jnp.concatenate((rewards, reward[:, None]), axis=1)
 
 
                 transition = Transition(
