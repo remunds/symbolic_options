@@ -7,16 +7,32 @@ import numpy as np
 import pygame
 from jaxtari.renderers import AtraJaxisRenderer, PyGameRenderer
 from jaxtari.wrappers import MultiRewardLogEnvState
+from craftax.craftax.renderer import render_craftax_pixels
+from craftax.craftax.constants import (
+    OBS_DIM,
+    BLOCK_PIXEL_SIZE_HUMAN,
+    INVENTORY_OBS_HEIGHT,
+)
 
 import wandb
+
+
+def render_craftax(craftax_state):
+    #TODO: move outside
+    # render_fn = jax.jit(render_craftax_pixels, static_argnums=(1,))
+    render_fn = render_craftax_pixels
+    pixels= render_fn(craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN)
+    print(pixels.shape)
+    return pixels
+
 
 video_thread = None
 
 def video_callback(states, active_agents, dones, step, renderer):
     global video_thread
-    if renderer is None:
-        print("Renderer is None, skipping video generation")
-        return
+    # if renderer is None:
+    #     print("Renderer is None, skipping video generation")
+    #     return
 
     if video_thread is not None and video_thread.is_alive():
         print("Thread is still running, skipping video generation")
@@ -43,6 +59,10 @@ def collect_video(states, active_agents, dones, step, renderer):
     # or len of the first array of the states pytree
     if num_states == 0:
         num_states = len(states[0])
+
+    if renderer is None:
+        pixels = render_craftax(states[0][0])
+        exit() 
 
     if isinstance(renderer, AtraJaxisRenderer):
         rasters = jax.vmap(renderer.render)(states)

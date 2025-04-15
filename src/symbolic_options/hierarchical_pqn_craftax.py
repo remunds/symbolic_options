@@ -95,10 +95,6 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
 
 
     config["NUM_AGENTS"] = len(env.reward_funcs)
-    #TODO: remove?
-    # config["NUM_AGENTS"] = 1 
-    # config["OBS_SHAPE"] = env.observation_space(env_params).shape
-    # config["NUM_ACTIONS"] = env.action_space(env_params).n
 
     rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
     rtpt.start()
@@ -131,9 +127,9 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
         )
 
         eps_meta_scheduler = optax.linear_schedule(
-            config["EPS_START"],
-            config["EPS_FINISH"],
-            config["EPS_DECAY"] * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]),
+            config["META_EPS_START"],
+            config["META_EPS_FINISH"],
+            config["META_EPS_DECAY"] * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]),
         )
 
         lr_scheduler = optax.linear_schedule(
@@ -350,7 +346,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                         1 - transition.done
                     ) * lambda_returns + transition.done * transition.rewards[... , state_idx]
                     next_q = jax.lax.cond(
-                        state_idx == -1,
+                        state_idx == num_agents,
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
                         lambda _: jnp.max(transition.q_val, axis=-1),
                         operand=None,
@@ -412,7 +408,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                                 )
 
                             chosen_action_qvals = jax.lax.cond(
-                                state_idx == -1,
+                                state_idx == num_agents,
                                 lambda _: jnp.take_along_axis(
                                     q_vals,
                                     jnp.expand_dims(minibatch.agent, axis=-1),
@@ -472,19 +468,20 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 )
 
                 train_state = train_state.replace(n_updates=train_state.n_updates + 1)
+                eps = jax.lax.cond(
+                    state_idx == num_agents,
+                    lambda _: eps_meta_scheduler(train_state.n_updates),
+                    lambda _: eps_scheduler(train_state.n_updates),
+                    operand=None,
+                )
                 metrics = {
                     "env_step": train_state.timesteps,
                     "update_steps": train_state.n_updates,
                     "grad_steps": train_state.grad_steps,
                     "td_loss": loss.mean(),
                     "qvals": qvals.mean(),
+                    "eps": eps,
                 }
-                done_infos = jax.tree_util.tree_map(
-                    lambda x: (x * infos["returned_episode"]).sum()
-                    / infos["returned_episode"].sum(),
-                    infos,
-                )
-                metrics.update(done_infos)
                 return metrics, train_state
 
             # end of _update_agent
@@ -522,6 +519,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
 
             metrics.update({k: jnp.nanmean(v) for k, v in infos.items()}),
 
+            test_metrics = get_test_metrics(train_states, meta_train_state, _rng)
             if config.get("TEST_DURING_TRAINING", False):
                 rng, _rng = jax.random.split(rng)
                 test_metrics = jax.lax.cond(
@@ -561,8 +559,8 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
 
         def get_test_metrics(train_states, meta_train_state, rng):
 
-            if not config.get("TEST_DURING_TRAINING", False):
-                return None
+            # if not config.get("TEST_DURING_TRAINING", False):
+            #     return None
 
             def _env_step(carry, _):
                 # this uses the meta-policy to step the environment
@@ -691,6 +689,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
             )
             infos, states, active_agents, dones = output
 
+            jax.debug.print("recording video...")
             if config.get("RECORD_VIDEO", False):
                 jax.lax.cond(
                     train_states.n_updates[0] > 0,
@@ -699,24 +698,24 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                     operand=None,
                 )
 
-            # # return mean of done infos
-            # done_infos = jax.tree_map(
-            #     lambda x: jnp.nanmean(
-            #         jnp.where(
-            #             infos["returned_episode"],
-            #             x,
-            #             jnp.nan,
-            #         )
-            #     ),
-            #     infos,
-            # )
-
             # return mean of done infos
-            done_infos = jax.tree_util.tree_map(
-                lambda x: (x * infos["returned_episode"]).sum()
-                / infos["returned_episode"].sum(),
+            done_infos = jax.tree_map(
+                lambda x: jnp.nanmean(
+                    jnp.where(
+                        infos["returned_episode"],
+                        x,
+                        jnp.nan,
+                    )
+                ),
                 infos,
             )
+
+            # return mean of done infos
+            # done_infos = jax.tree_util.tree_map(
+            #     lambda x: (x * infos["returned_episode"]).sum()
+            #     / infos["returned_episode"].sum(),
+            #     infos,
+            # )
             return done_infos
 
         rng, _rng = jax.random.split(rng)

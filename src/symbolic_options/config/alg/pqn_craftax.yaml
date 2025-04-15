@@ -3,7 +3,7 @@ NAME_INITIALS: "RE"
 ALG_NAME: "pqn_hier"
 TOTAL_TIMESTEPS: 1e9
 TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
-NUM_ENVS: 1024 # parallel environments
+NUM_ENVS: 1024 #parallel environments
 NUM_STEPS: 1 # steps per environment in each update
 EPS_START: 0.1
 EPS_FINISH: 0.005
@@ -38,8 +38,8 @@ LOG_ACHIEVEMENTS: True
 # evaluation
 WANDB_LOG_INTERVAL: 100
 TEST_DURING_TRAINING: False 
-TEST_INTERVAL: 0.01 # in terms of total updates
-TEST_NUM_ENVS: 512
+TEST_INTERVAL: 1.0 # 0.01 # in terms of total updates
+TEST_NUM_ENVS: 1024 # 512
 TEST_NUM_STEPS: 10000
 EPS_TEST: 0.0 # 0 for greedy policy
-RECORD_VIDEO: False # in terms of total updates
+RECORD_VIDEO: True # in terms of total updates

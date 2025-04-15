@@ -136,12 +136,15 @@ def make_train(config, env, meta_policy, renderer):
             config["EPS_FINISH"],
             (config["EPS_DECAY"]) * config["NUM_UPDATES_DECAY"],
         )
+        print("normal transition steps: ", (config["EPS_DECAY"]) * config["NUM_UPDATES_DECAY"])
 
         eps_meta_scheduler = optax.linear_schedule(
-            config["EPS_START"],
-            config["EPS_FINISH"],
-            config["EPS_DECAY"] * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]),
+            config["META_EPS_START"],
+            config["META_EPS_FINISH"],
+            config["META_EPS_DECAY"] * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]),
         )
+        print("meta eps start: ", config["META_EPS_START"]) 
+        print("meta transition steps: ", (config["META_EPS_DECAY"]) * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]))
 
         lr_scheduler = optax.linear_schedule(
             init_value=config["LR"],
@@ -275,11 +278,6 @@ def make_train(config, env, meta_policy, renderer):
                 if config.get("META_GREEDY", True): 
                     active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
                 else:
-                    # rng_s, _rng_s = jax.random.split(rng_s)
-                    # #NOTE: not sure if this is the best way to create the log-distribution 
-                    # combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
-                    # combined_log_probs = jnp.log(combined_probs)
-                    # active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
                     _rng_s = jax.random.split(rng_s, config["NUM_ENVS"])
                     eps = jnp.full(config["NUM_ENVS"], eps_meta_scheduler(meta_train_state.n_updates))
                     active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
@@ -352,7 +350,7 @@ def make_train(config, env, meta_policy, renderer):
                         1 - transition.done
                     ) * lambda_returns + transition.done * transition.rewards[... , state_idx]
                     next_q = jax.lax.cond(
-                        state_idx == -1,
+                        state_idx == num_agents,
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
                         lambda _: jnp.max(transition.q_val, axis=-1),
                         operand=None,
@@ -392,7 +390,7 @@ def make_train(config, env, meta_policy, renderer):
                             )  # (batch_size*2, num_actions)
 
                             chosen_action_qvals = jax.lax.cond(
-                                state_idx == -1,
+                                state_idx == num_agents,
                                 lambda _: jnp.take_along_axis(
                                     q_vals,
                                     jnp.expand_dims(minibatch.agent, axis=-1),
@@ -452,6 +450,12 @@ def make_train(config, env, meta_policy, renderer):
                 )
 
                 train_state = train_state.replace(n_updates=train_state.n_updates + 1)
+                eps = jax.lax.cond(
+                    state_idx == num_agents,
+                    lambda _: eps_meta_scheduler(train_state.n_updates),
+                    lambda _: eps_scheduler(train_state.n_updates),
+                    operand=None,
+                )
                 metrics = {
                     "env_step": train_state.timesteps,
                     "update_steps": train_state.n_updates,
@@ -460,6 +464,7 @@ def make_train(config, env, meta_policy, renderer):
                     "grad_steps": train_state.grad_steps,
                     "td_loss": loss.mean(),
                     "qvals": qvals.mean(),
+                    "eps": eps, 
                 }
                 return metrics, train_state
 
@@ -471,6 +476,7 @@ def make_train(config, env, meta_policy, renderer):
             
             meta_policy_string = config.get("META_POLICY", "llm")
             if meta_policy_string == "learned" or meta_policy_string == "combined":
+                # meta_reward_idx = num_agents # num_agents reward is shaped or env reward
                 meta_reward_idx = num_agents # num_agents reward is shaped or env reward
                 # note that the reward_idx works, because we add the env_reward to the end of all_rewards
                 # so we either select the shaped reward or the env reward
@@ -480,11 +486,11 @@ def make_train(config, env, meta_policy, renderer):
                 else:
                     # if n_updates > config["LLM_PRETRAIN"], we want to use the learned meta-policy
                     def fake_update_agent(train_state, state_idx, rng, network): 
+                        metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
                         train_state = train_state.replace(
                             timesteps=train_state.timesteps
                             + config["NUM_STEPS"] * config["NUM_ENVS"]
                         )
-                        metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
                         return metrics_meta, train_state
 
                     metrics_meta, meta_train_state = jax.lax.cond(

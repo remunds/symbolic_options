@@ -14,7 +14,7 @@ from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxtari
 from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
 from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
 
-from jaxtari.wrappers import FlattenObservationWrapper, MultiRewardLogWrapper, AtariWrapper 
+from jaxtari.wrappers import FlattenObservationWrapper 
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
 from symbolic_options.reward_functions.craftax import nav_to_ladder_reward, mine_reward, enemies_reward, intrinsics_reward 
@@ -32,6 +32,7 @@ def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy, combined_meta_policy_explicit
+        from jaxtari.wrappers import MultiRewardLogWrapper
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
@@ -46,6 +47,7 @@ def outer_make_train(config):
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
+        from jaxtari.wrappers import MultiRewardLogWrapper
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
         env = JaxKangaroo(reward_funcs=reward_funcs)
         renderer = KangarooRenderer() 
