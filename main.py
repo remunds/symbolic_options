@@ -152,9 +152,8 @@ def single_run(config):#
     print(f"Took {time.time()-t0} seconds to complete.")
 
     if config.get("SAVE_PATH", None) is not None:
-        from jaxmarl.wrappers.baselines import save_params
-
-        model_states = outs["runner_state"][0]
+        from symbolic_options.purejaxql.save_load import save_params
+        model_state = outs["runner_state"][0]
         save_dir = os.path.join(config["SAVE_PATH"], env_name)
         os.makedirs(save_dir, exist_ok=True)
         OmegaConf.save(
@@ -165,7 +164,7 @@ def single_run(config):#
         )
 
         for i, rng in enumerate(rngs):
-            params = jax.tree_map(lambda x: x[i], model_states.params)
+            params = jax.tree_util.tree_map(lambda x: x[i], model_state.params)
             save_path = os.path.join(
                 save_dir,
                 f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}.safetensors',
