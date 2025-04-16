@@ -17,7 +17,7 @@ from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
 from jaxtari.wrappers import FlattenObservationWrapper 
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
-from symbolic_options.reward_functions.craftax import nav_to_ladder_reward, mine_reward, enemies_reward, intrinsics_reward 
+from symbolic_options.reward_functions.craftax import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, level_progression_reward 
 
 from craftax.craftax_env import make_craftax_env_from_name
 from symbolic_options.purejaxql.craftax_wrappers import (
@@ -26,7 +26,6 @@ from symbolic_options.purejaxql.craftax_wrappers import (
     BatchEnvWrapper,
     MultiRewardWrapper
 )
-from symbolic_options.purejaxql.batch_renorm import BatchRenorm
 
 def outer_make_train(config):
 
@@ -57,7 +56,7 @@ def outer_make_train(config):
     elif config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
         from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
         from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper
-        reward_funcs = [nav_to_ladder_reward, mine_reward, enemies_reward, intrinsics_reward]
+        reward_funcs = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
         renderer = None
         basic_env = make_craftax_env_from_name(
             config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]

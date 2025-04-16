@@ -11,7 +11,6 @@ def idle_reward(prev_state: SeaquestState, state: SeaquestState):
 
 @jax.jit
 def collect_divers_reward(prev_state: SeaquestState, state: SeaquestState):
-    # return 3 if a new diver was collected
     reward = jnp.where(state.divers_collected > prev_state.divers_collected, 1, 0)
     # dying punishment
     reward = jnp.where(state.lives < prev_state.lives, -1, reward)

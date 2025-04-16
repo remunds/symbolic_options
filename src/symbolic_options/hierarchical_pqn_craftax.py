@@ -559,8 +559,8 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
 
         def get_test_metrics(train_states, meta_train_state, rng):
 
-            # if not config.get("TEST_DURING_TRAINING", False):
-            #     return None
+            if not config.get("TEST_DURING_TRAINING", False):
+                return None
 
             def _env_step(carry, _):
                 # this uses the meta-policy to step the environment
@@ -644,7 +644,6 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 active_agent_vid = active_agent[0]
                 # select the actions of the active agent 
                 action = actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
-
                 # use the selected actions to step the environment
                 new_obs, new_env_state, reward, done, info = test_env.step(
                     _rng, env_state, action, env_params
@@ -689,14 +688,14 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
             )
             infos, states, active_agents, dones = output
 
-            jax.debug.print("recording video...")
-            if config.get("RECORD_VIDEO", False):
-                jax.lax.cond(
-                    train_states.n_updates[0] > 0,
-                    lambda _: jax.debug.callback(video_callback, states, active_agents, dones, train_states.n_updates[0], renderer),
-                    lambda _: None,
-                    operand=None,
-                )
+            # jax.debug.print("recording video...")
+            # if config.get("RECORD_VIDEO", False):
+            #     jax.lax.cond(
+            #         train_states.n_updates[0] > 0,
+            #         lambda _: jax.debug.callback(video_callback, states, active_agents, dones, train_states.n_updates[0], renderer),
+            #         lambda _: None,
+            #         operand=None,
+            #     )
 
             # return mean of done infos
             done_infos = jax.tree_map(

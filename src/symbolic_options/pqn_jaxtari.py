@@ -1,6 +1,4 @@
-import os
 import jax
-import jax.experimental
 import jax.numpy as jnp
 import numpy as np
 from typing import Any
@@ -14,11 +12,6 @@ from flax.training.train_state import TrainState
 import wandb
 
 from symbolic_options.utils.video_recorder import video_callback
-# import threading
-
-# from jaxtari.wrappers import MultiRewardLogEnvState
-# from jaxtari.renderers import PyGameRenderer, AtraJaxisRenderer
-# import pygame
 
 class QNetwork(nn.Module):
     action_dim: int

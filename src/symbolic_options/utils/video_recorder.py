@@ -17,13 +17,13 @@ from craftax.craftax.constants import (
 import wandb
 
 
-def render_craftax(craftax_state):
-    #TODO: move outside
-    # render_fn = jax.jit(render_craftax_pixels, static_argnums=(1,))
-    render_fn = render_craftax_pixels
-    pixels= render_fn(craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN)
-    print(pixels.shape)
-    return pixels
+# def render_craftax(craftax_state):
+#     #TODO: move outside
+#     # render_fn = jax.jit(render_craftax_pixels, static_argnums=(1,))
+#     render_fn = render_craftax_pixels
+#     pixels= render_fn(craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN)
+#     print(pixels.shape)
+#     return pixels
 
 
 video_thread = None
@@ -60,9 +60,9 @@ def collect_video(states, active_agents, dones, step, renderer):
     if num_states == 0:
         num_states = len(states[0])
 
-    if renderer is None:
-        pixels = render_craftax(states[0][0])
-        exit() 
+    # if renderer is None:
+    #     pixels = render_craftax(states[0][0])
+    #     exit() 
 
     if isinstance(renderer, AtraJaxisRenderer):
         rasters = jax.vmap(renderer.render)(states)
