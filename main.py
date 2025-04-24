@@ -18,6 +18,7 @@ from jaxtari.wrappers import FlattenObservationWrapper
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
 from symbolic_options.reward_functions.craftax import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, level_progression_reward 
+from symbolic_options.utils.video_recorder import CraftaxRenderer
 
 from craftax.craftax_env import make_craftax_env_from_name
 from symbolic_options.purejaxql.craftax_wrappers import (
@@ -30,7 +31,7 @@ from symbolic_options.purejaxql.craftax_wrappers import (
 def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
-        from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy, combined_meta_policy_explicit
+        from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy 
         from jaxtari.wrappers import MultiRewardLogWrapper
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
@@ -45,7 +46,7 @@ def outer_make_train(config):
         # env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
+        from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from jaxtari.wrappers import MultiRewardLogWrapper
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
         env = JaxKangaroo(reward_funcs=reward_funcs)
@@ -54,10 +55,10 @@ def outer_make_train(config):
         # env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
-        from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, combined_meta_policy_explicit, conditional_meta_policy
+        from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper
         reward_funcs = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
-        renderer = None
+        renderer = CraftaxRenderer()
         basic_env = make_craftax_env_from_name(
             config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
         )
@@ -95,10 +96,10 @@ def outer_make_train(config):
         elif meta_policy_string == "conditional":
             meta_policy = conditional_meta_policy
         elif meta_policy_string == "combined":
-            if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False): 
-                meta_policy = combined_meta_policy_explicit
-            else:
-                meta_policy = combined_meta_policy
+            # if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False): 
+            #     meta_policy = combined_meta_policy_explicit
+            # else:
+            meta_policy = combined_meta_policy
         else:
             raise ValueError("Invalid meta policy")
     else:
@@ -109,7 +110,8 @@ def outer_make_train(config):
             make_train_fn = make_train_hier_craftax
         else:
             make_train_fn = make_train_pqn_craftax
-        return make_train_fn(config, env, test_env, env_params, meta_policy, renderer)
+        meta_policy_llm = llm_meta_policy
+        return make_train_fn(config, env, test_env, env_params, meta_policy, meta_policy_llm, renderer)
     else:
         if config.get("HIERARCHICAL", False):
             make_train_fn = make_train_hier_jaxtari

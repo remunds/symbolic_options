@@ -1,3 +1,4 @@
+from functools import partial
 import jax
 import jax.numpy as jnp
 from craftax.craftax.craftax_state import EnvState as CraftaxState
@@ -75,7 +76,7 @@ def level_progression_reward(prev_state: CraftaxState, state: CraftaxState):
     )
     return reward
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0))
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState):
     """
     Mutually exclusive.
@@ -231,12 +232,12 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Craftax
     combined_q_vals = conditional_q_vals * learned_q_vals
     return combined_q_vals
 
-def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state: CraftaxState):
-    llm_q_vals = llm_meta_policy(network, meta_train_state, last_obs, env_state)
-    conditional_q_vals = conditional_meta_policy(network, meta_train_state, last_obs, env_state)
-    learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
-    combined_q_vals = conditional_q_vals * learned_q_vals
-    return llm_q_vals, combined_q_vals
+# def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state: CraftaxState):
+#     llm_q_vals = llm_meta_policy(network, meta_train_state, last_obs, env_state)
+#     conditional_q_vals = conditional_meta_policy(network, meta_train_state, last_obs, env_state)
+#     learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
+#     combined_q_vals = conditional_q_vals * learned_q_vals
+#     return llm_q_vals, combined_q_vals
 
 
 # pseudo code meta-policy from deepseek-r1

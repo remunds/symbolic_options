@@ -1,6 +1,6 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_combined_pretrain_reset1_meta_explore"
+ALG_NAME: "pqn_hier_llm"
 TOTAL_TIMESTEPS: 1e9
 TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 128 # parallel environments
@@ -23,10 +23,10 @@ GAMMA: 0.99
 LAMBDA: 0.65
 
 HIERARCHICAL: True # False: use PQN rather than hierarchical PQN
-META_POLICY: "combined" # llm, learned, conditional, combined
-META_GREEDY: False # True: take greedy option, else sample from q-dist
+META_POLICY: "llm" # llm, learned, conditional, combined
+META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
-LLM_PRETRAIN: True #pretrain options with llm meta policy
+LLM_PRETRAIN: False #pretrain options with llm meta policy
 RANDOM_PRETRAIN: False #pretrian options with random meta policy
 PRETRAIN_LEN: 100000 # length of pretraining
 
