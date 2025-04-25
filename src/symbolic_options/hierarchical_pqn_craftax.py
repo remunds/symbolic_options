@@ -664,6 +664,7 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                 )
 
                 # active_agent shape: (num_envs)
+                combined_q_vid = combined_q[0]
                 active_agent_vid = active_agent[0]
                 # select the actions of the active agent 
                 action = actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
@@ -700,7 +701,7 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                     all_done, active_rewards, new_prev_rewards
                 )
 
-                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, done[0])
+                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = test_env.reset(_rng, env_params)
@@ -709,12 +710,12 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, init_rewards, _rng), None, config["TEST_NUM_STEPS"]
             )
-            infos, states, active_agents, dones = output
+            infos, states, active_agents, combined_qs, dones = output
 
             if config.get("RECORD_VIDEO", False):
                 jax.lax.cond(
                     train_states.n_updates[0] > 0,
-                    lambda _: jax.debug.callback(video_callback, states, active_agents, dones, train_states.n_updates[0], renderer),
+                    lambda _: jax.debug.callback(video_callback, states, active_agents, combined_qs, dones, train_states.n_updates[0], renderer),
                     lambda _: None,
                     operand=None,
                 )

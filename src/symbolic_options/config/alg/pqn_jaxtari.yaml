@@ -31,13 +31,13 @@ RANDOM_PRETRAIN: False #pretrian options with random meta policy
 PRETRAIN_LEN: 100000 # length of pretraining
 
 # env specific
-# ENV_NAME: "Seaquest"
-ENV_NAME: "Kangaroo"
+ENV_NAME: "Seaquest"
+# ENV_NAME: "Kangaroo"
 ENV_KWARGS: {}
 
 # evaluation
 TEST_DURING_TRAINING: True 
-TEST_INTERVAL: 0.05 # in terms of total updates
+TEST_INTERVAL: 0.01 # in terms of total updates
 TEST_NUM_ENVS: 128
 TEST_NUM_STEPS: 10000
 EPS_TEST: 0.0 # 0 for greedy policy

@@ -12,7 +12,7 @@ def survival_reward(prev_state: CraftaxState, state: CraftaxState):
     drink_reward = state.player_drink - prev_state.player_drink
     energy_reward = state.player_energy - prev_state.player_energy
     mana_reward = state.player_mana - prev_state.player_mana
-    return health_reward + food_reward + drink_reward + energy_reward + mana_reward
+    return 5*health_reward + food_reward + drink_reward + 0.5*energy_reward + 0.5*mana_reward
 
 @jax.jit
 def combat_reward(prev_state: CraftaxState, state: CraftaxState):
@@ -29,9 +29,13 @@ def combat_reward(prev_state: CraftaxState, state: CraftaxState):
 def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
     # Reward for resource collection (wood, stone, coal, iron, diamond)
     wood_reward = state.inventory.wood - prev_state.inventory.wood
+    wood_reward = jnp.where(state.inventory.wood < 20, wood_reward, 0)
     stone_reward = state.inventory.stone - prev_state.inventory.stone
+    stone_reward = jnp.where(state.inventory.stone < 10, stone_reward, 0)
     coal_reward = state.inventory.coal - prev_state.inventory.coal
+    coal_reward = jnp.where(state.inventory.coal < 10, coal_reward, 0)
     iron_reward = state.inventory.iron - prev_state.inventory.iron
+    iron_reward = jnp.where(state.inventory.iron < 10, iron_reward, 0)
     diamond_reward = state.inventory.diamond - prev_state.inventory.diamond
     return wood_reward + 2 * stone_reward + 2 * coal_reward + 3 * iron_reward + 5 * diamond_reward
 
@@ -55,8 +59,9 @@ def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
 
 @jax.jit
 def explore(prev_state: CraftaxState, state: CraftaxState):
-    # Reward nothing
-    return jnp.zeros_like(state.player_level)
+    # Reward movement
+    explore_reward = jnp.where(state.player_position != prev_state.player_position, 1, 0)
+    return explore_reward 
 
 @jax.jit
 def level_progression_reward(prev_state: CraftaxState, state: CraftaxState):
@@ -97,10 +102,10 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
 
     # 1. Survival emergencies (health, hunger, thirst, energy)
     survival_mask = (
-        (state.player_health < 5) | 
-        (state.player_food < 3) | 
-        (state.player_drink < 3) | 
-        (state.player_energy < 3)
+        (state.player_health < 9) | 
+        (state.player_food < 4) | 
+        (state.player_drink < 4) | 
+        (state.player_energy < 4)
     )
 
     # 2. Combat priority - check nearby enemies

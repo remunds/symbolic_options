@@ -17,6 +17,68 @@ from craftax.craftax.constants import (
 
 import wandb
 
+class SidebarRenderer:
+    def __init__(self, frame_shape, sidebar_width=50, font_size=15, text_color=(255, 255, 255), bg_color=(0, 0, 0), highlight_color=(50, 50, 200)):
+        """
+        frame_shape: (3, H, W)
+        """
+        _, self.h, self.w = frame_shape
+        self.sidebar_width = sidebar_width
+        self.text_color = text_color
+        self.bg_color = bg_color
+        self.highlight_color = highlight_color
+
+        pygame.init()
+        pygame.font.init()
+
+        self.font = pygame.font.SysFont("Arial", font_size)
+        self.surface = pygame.Surface((self.w + sidebar_width, self.h))
+        self.left_surface = pygame.Surface((self.w, self.h))
+
+    def render(self, frame, texts, active_cell):
+        """
+        Add sidebar with text to a single frame.
+
+        frame: (3, H, W) RGB numpy array
+        texts: list of tuple of strings
+        """
+
+        self.surface.fill(self.bg_color)
+
+        # Draw the frame on the left
+        pygame.surfarray.blit_array(self.left_surface, frame.transpose(2, 1, 0))
+        self.surface.blit(self.left_surface, (0, 0))
+
+        # Draw text on the right
+        cell_height = self.h // len(texts)
+        for i, text in enumerate(texts):
+            y = i * cell_height
+            if i == active_cell:
+                pygame.draw.rect(
+                    self.surface,
+                    self.highlight_color,
+                    pygame.Rect(self.w, y, self.sidebar_width, cell_height)
+                )
+            t0_surface = self.font.render(text[0], True, self.text_color)
+            t1_surface = self.font.render(text[1], True, self.text_color)
+            t0_x = self.w + (self.sidebar_width- t0_surface.get_width()) // 2
+            t1_x = self.w + (self.sidebar_width- t1_surface.get_width()) // 2
+            total_height = t0_surface.get_height() + t1_surface.get_height() + 4 # 4 pixels of padding 
+            start_y = y + (cell_height - total_height) // 2
+            t0_y = start_y
+            t1_y = start_y + t0_surface.get_height() + 4
+
+            self.surface.blit(t0_surface, (t0_x, t0_y))
+            self.surface.blit(t1_surface, (t1_x, t1_y))
+
+        # Convert back to NumPy
+        # Note: pygame.surfarray.array3d returns (W, H, 3) but we need (3, H, W)
+        output_frame = pygame.surfarray.array3d(self.surface).transpose(2, 1, 0)
+        return output_frame
+
+    def close(self):
+        pygame.quit()
+
 class CraftaxRenderer:
     @partial(jax.jit, static_argnums=(0,))
     def render(self, craftax_state):
@@ -26,7 +88,7 @@ class CraftaxRenderer:
 
 video_thread = None
 
-def video_callback(states, active_agents, dones, step, renderer):
+def video_callback(states, active_agents, combined_qs, dones, step, renderer):
     global video_thread
 
     if renderer is None:
@@ -37,7 +99,7 @@ def video_callback(states, active_agents, dones, step, renderer):
         print("Thread is still running, skipping video generation")
         return
     
-    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, dones, step, renderer))
+    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, combined_qs, dones, step, renderer))
     video_thread.start()
 
 def add_active_agent(screen, active_agent_num: int):
@@ -45,7 +107,7 @@ def add_active_agent(screen, active_agent_num: int):
     text_surface = font.render(f"active agent: {active_agent_num}", True, (255, 255, 255)) 
     screen.blit(text_surface, (300, 300)) 
 
-def collect_video(states, active_agents, dones, step, renderer):
+def collect_video(states, active_agents, combined_qs, dones, step, renderer):
     print("Rendering video...")
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
@@ -91,6 +153,15 @@ def collect_video(states, active_agents, dones, step, renderer):
         # but should be (N, 3, H, W) 
         frames = np.transpose(frames, (0, 3, 1, 2))
 
-    video = wandb.Video(frames, fps=60, format="mp4")
+    sidebar_renderer = SidebarRenderer(frames[0].shape)
+    # (N, 3, H, W + sidebar_width)
+    new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
+    for i in range(len(frames)):
+        # add sidebar to each frame
+        texts = [(f"Option {t_i}:", str(t)) for t_i, t in enumerate(combined_qs[i])]
+        new_frames[i] = sidebar_renderer.render(frames[i], texts, active_agents[i])
+    sidebar_renderer.close()
+
+    video = wandb.Video(new_frames, fps=60, format="mp4")
     wandb.log({f"video_{step}": video}, step=wandb.run.step)
     print("Video done.")
