@@ -80,10 +80,9 @@ class SidebarRenderer:
         pygame.quit()
 
 class CraftaxRenderer:
-    @partial(jax.jit, static_argnums=(0,))
-    def render(self, craftax_state):
-        render_fn = jax.jit(render_craftax_pixels, static_argnums=(1,))
-        return render_fn(craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN)
+    @partial(jax.jit, static_argnums=(0,2))
+    def render(self, craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN):
+        return render_craftax_pixels(craftax_state, block_pixel_size=block_pixel_size)
 
 
 video_thread = None
@@ -158,7 +157,7 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer):
     new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
     for i in range(len(frames)):
         # add sidebar to each frame
-        texts = [(f"Option {t_i}:", str(t)) for t_i, t in enumerate(combined_qs[i])]
+        texts = [(f"Option {t_i}:", f"{t:.2f}") for t_i, t in enumerate(combined_qs[i])]
         new_frames[i] = sidebar_renderer.render(frames[i], texts, active_agents[i])
     sidebar_renderer.close()
 

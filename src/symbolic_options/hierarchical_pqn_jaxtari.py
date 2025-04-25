@@ -648,7 +648,7 @@ def make_train(config, env, meta_policy, renderer):
                 all_returns = jnp.where(
                     all_done, all_returns, jnp.nan * jnp.ones_like(all_returns)
                 )
-                info["active_returns"] = all_returns[jnp.arange(config["NUM_ENVS"]), active_agent] # (128,)
+                info["active_returns"] = all_returns[jnp.arange(config["TEST_NUM_ENVS"]), active_agent] # (128,)
                 for agent_idx in range(num_agents):
                     info[f"active_returns_{agent_idx}"] = all_returns[:, agent_idx]
 
@@ -662,7 +662,7 @@ def make_train(config, env, meta_policy, renderer):
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = vmap_reset(config["TEST_NUM_ENVS"])(_rng)
 
-            init_rewards = jnp.zeros((config["NUM_ENVS"], num_agents))
+            init_rewards = jnp.zeros((config["TEST_NUM_ENVS"], num_agents))
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, init_rewards, _rng), None, config["TEST_NUM_STEPS"]
             )

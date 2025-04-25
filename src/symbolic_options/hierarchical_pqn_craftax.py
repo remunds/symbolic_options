@@ -264,11 +264,12 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                 # Decide which Q-combination strategy to apply
                 combined_q = jax.lax.switch(
                     jnp.array([
-                        meta_policy_mode == "conditional",
                         llm_pretrain,
-                        random_pretrain
+                        random_pretrain,
+                        meta_policy_mode == "conditional",
+                        True # default if nothing else is true
                     ], dtype=jnp.bool_).argmax(),  # priority order
-                    [handle_conditional, handle_llm_pretrain, handle_random_pretrain, handle_default],
+                    [handle_llm_pretrain, handle_random_pretrain, handle_conditional, handle_default],
                 )
 
                 # Now select active agent — greedy vs exploratory
@@ -638,11 +639,12 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                 # Decide which Q-combination strategy to apply
                 combined_q = jax.lax.switch(
                     jnp.array([
-                        meta_policy_mode == "conditional",
                         llm_pretrain,
-                        random_pretrain
+                        random_pretrain,
+                        meta_policy_mode == "conditional",
+                        True # default if nothing else is true
                     ], dtype=jnp.bool_).argmax(),  # priority order
-                    [handle_conditional, handle_llm_pretrain, handle_random_pretrain, handle_default],
+                    [handle_llm_pretrain, handle_random_pretrain, handle_conditional, handle_default],
                 )
 
                 # Now select active agent — greedy vs exploratory
@@ -692,7 +694,7 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                 all_returns = jnp.where(
                     all_done, all_returns, jnp.nan * jnp.ones_like(all_returns)
                 )
-                info["active_returns"] = all_returns[jnp.arange(config["NUM_ENVS"]), active_agent] # (128,)
+                info["active_returns"] = all_returns[jnp.arange(config["TEST_NUM_ENVS"]), active_agent] # (128,)
                 for agent_idx in range(num_agents):
                     info[f"active_returns_{agent_idx}"] = all_returns[:, agent_idx]
 
@@ -706,7 +708,7 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = test_env.reset(_rng, env_params)
 
-            init_rewards = jnp.zeros((config["NUM_ENVS"], num_agents))
+            init_rewards = jnp.zeros((config["TEST_NUM_ENVS"], num_agents))
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, init_rewards, _rng), None, config["TEST_NUM_STEPS"]
             )

@@ -37,7 +37,8 @@ def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
     iron_reward = state.inventory.iron - prev_state.inventory.iron
     iron_reward = jnp.where(state.inventory.iron < 10, iron_reward, 0)
     diamond_reward = state.inventory.diamond - prev_state.inventory.diamond
-    return wood_reward + 2 * stone_reward + 2 * coal_reward + 3 * iron_reward + 5 * diamond_reward
+    resource_reward = wood_reward + 2 * stone_reward + 2 * coal_reward + 3 * iron_reward + 5 * diamond_reward
+    return resource_reward
 
 @jax.jit
 def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
@@ -60,7 +61,8 @@ def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
 @jax.jit
 def explore(prev_state: CraftaxState, state: CraftaxState):
     # Reward movement
-    explore_reward = jnp.where(state.player_position != prev_state.player_position, 1, 0)
+    explore_reward = jnp.where(state.player_position[0] != prev_state.player_position[0], 1, 0)
+    explore_reward = jnp.where(state.player_position[1] != prev_state.player_position[1], explore_reward, 0)
     return explore_reward 
 
 @jax.jit
