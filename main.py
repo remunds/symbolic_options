@@ -6,8 +6,8 @@ import jax
 import wandb
 import hydra
 from omegaconf import OmegaConf
-from jaxatari.games.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis as SeaquestRenderer
-from jaxatari.games.jax_kangaroo import JaxKangaroo, Renderer_AtraJaxis as KangarooRenderer
+from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestRenderer 
+from jaxatari.games.jax_kangaroo import JaxKangaroo, KangarooRenderer
 from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
@@ -44,8 +44,8 @@ def outer_make_train(config):
             reward_funcs.append(shaped_reward)
         env = JaxSeaquest(reward_funcs=reward_funcs)
         renderer = SeaquestRenderer()
+        env = AtariWrapper(env, sticky_actions=False)
         env = FlattenObservationWrapper(env)
-        env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
@@ -53,8 +53,8 @@ def outer_make_train(config):
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
         env = JaxKangaroo(reward_funcs=reward_funcs)
         renderer = KangarooRenderer() 
+        env = AtariWrapper(env, sticky_actions=False)
         env = FlattenObservationWrapper(env)
-        env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
     elif "Craftax" in config.get("ENV_NAME", None):
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
@@ -112,18 +112,14 @@ def outer_make_train(config):
 
     if "Craftax" in config.get("ENV_NAME", None):
         if config.get("HIERARCHICAL", False):
-            make_train_fn = make_train_hier_craftax
+            return make_train_hier_craftax(config, env, test_env, env_params, meta_policy, llm_meta_policy, renderer)
         else:
-            make_train_fn = make_train_pqn_craftax
-        meta_policy_llm = llm_meta_policy
-        return make_train_fn(config, env, test_env, env_params, meta_policy, meta_policy_llm, renderer)
+            return make_train_pqn_craftax(config, env, test_env, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
-            make_train_fn = make_train_hier_jaxatari
+            return make_train_hier_jaxatari(config, env, meta_policy, llm_meta_policy, renderer)
         else:
-            make_train_fn = make_train_pqn_jaxatari
-        meta_policy_llm = llm_meta_policy
-        return make_train_fn(config, env, meta_policy, meta_policy_llm, renderer)
+            return make_train_pqn_jaxatari(config, env, meta_policy, renderer)
 
 def single_run(config):#
     config = {**config, **config["alg"]}

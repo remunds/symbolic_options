@@ -518,8 +518,7 @@ def make_train(config, env, meta_policy, meta_policy_llm, renderer):
                 metrics = {
                     "env_step": train_state.timesteps,
                     "update_steps": train_state.n_updates,
-                    # "env_frame": train_state.timesteps * env.observation_space().shape[-1],
-                    "env_frame": train_state.timesteps * config["OBS_SHAPE"][-1],
+                    "env_frame": train_state.timesteps * 4, #skipped 4 frames 
                     "grad_steps": train_state.grad_steps,
                     "td_loss": loss.mean(),
                     "qvals": qvals.mean(),

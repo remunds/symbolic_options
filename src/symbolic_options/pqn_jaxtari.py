@@ -320,7 +320,7 @@ def make_train(config, env, meta_policy, renderer):
             metrics = {
                 "env_step": train_state.timesteps,
                 "update_steps": train_state.n_updates,
-                "env_frame": train_state.timesteps * config["OBS_SHAPE"][-1],
+                "env_frame": train_state.timesteps * 4, #(stacked 4 frames) 
                 "grad_steps": train_state.grad_steps,
                 "td_loss": loss.mean(),
                 "qvals": qvals.mean(),
@@ -396,7 +396,7 @@ def make_train(config, env, meta_policy, renderer):
             if config.get("RECORD_VIDEO", False):
                 jax.lax.cond(
                     train_state.n_updates > 0,
-                    lambda _: jax.debug.callback(video_callback, states, None, dones, train_state.n_updates, renderer),
+                    lambda _: jax.debug.callback(video_callback, states, None, None, dones, train_state.n_updates, renderer),
                     lambda _: None,
                     operand=None,
                 )

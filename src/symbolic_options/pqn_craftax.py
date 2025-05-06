@@ -21,6 +21,7 @@ from symbolic_options.purejaxql.craftax_wrappers import (
     BatchEnvWrapper,
 )
 from symbolic_options.purejaxql.batch_renorm import BatchRenorm
+from symbolic_options.utils.video_recorder import video_callback
 
 
 class QNetwork(nn.Module):
@@ -406,14 +407,25 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 new_obs, new_env_state, reward, new_done, info = test_env.step(
                     _rng, env_state, new_action, env_params
                 )
-                return (new_env_state, new_obs, rng), info
+                env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
+                return (new_env_state, new_obs, rng), (info, env_state_vid, new_done[0])
 
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = test_env.reset(_rng, env_params)
 
-            _, infos = jax.lax.scan(
+            _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, _rng), None, config["TEST_NUM_STEPS"]
             )
+            infos, states, dones = output
+
+            if config.get("RECORD_VIDEO", False):
+                jax.lax.cond(
+                    train_state.n_updates > 0,
+                    lambda _: jax.debug.callback(video_callback, states, None, None, dones, train_state.n_updates, renderer),
+                    lambda _: None,
+                    operand=None,
+                )
+
             # return mean of done infos
             done_infos = jax.tree_util.tree_map(
                 lambda x: (x * infos["returned_episode"]).sum()

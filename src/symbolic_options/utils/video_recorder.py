@@ -160,16 +160,18 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer):
         # but should be (N, 3, H, W) 
         frames = np.transpose(frames, (0, 3, 1, 2))
 
-    sidebar_renderer = SidebarRenderer(frames[0].shape)
-    # (N, 3, H, W + sidebar_width)
-    new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
-    for i in range(len(frames)):
-        # add sidebar to each frame
-        texts = [(f"Option {t_i}:", f"{t:.2f}") for t_i, t in enumerate(combined_qs[i])]
-        new_frames[i] = sidebar_renderer.render(frames[i], texts, active_agents[i])
-    sidebar_renderer.close()
+    if active_agents is not None:
+        sidebar_renderer = SidebarRenderer(frames[0].shape)
+        # (N, 3, H, W + sidebar_width)
+        new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
+        for i in range(len(frames)):
+            # add sidebar to each frame
+            texts = [(f"Option {t_i}:", f"{t:.2f}") for t_i, t in enumerate(combined_qs[i])]
+            new_frames[i] = sidebar_renderer.render(frames[i], texts, active_agents[i])
+        sidebar_renderer.close()
+        frames = new_frames
 
     fps = 30 #if not isinstance(renderer, CraftaxRenderer) else 30
-    video = wandb.Video(new_frames, fps=fps, format="mp4")
+    video = wandb.Video(frames, fps=fps, format="mp4")
     wandb.log({f"video_{step}": video}, step=wandb.run.step)
     print("Video done.")
