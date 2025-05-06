@@ -1,7 +1,7 @@
 from functools import partial
 import jax
 import jax.numpy as jnp
-from craftax.craftax.craftax_state import EnvState as CraftaxState, Inventory
+from craftax.craftax_classic.envs.craftax_state import EnvState as CraftaxState, Inventory
 from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState
 
 @jax.jit
@@ -11,19 +11,21 @@ def survival_reward(prev_state: CraftaxState, state: CraftaxState):
     food_reward = state.player_food - prev_state.player_food
     drink_reward = state.player_drink - prev_state.player_drink
     energy_reward = state.player_energy - prev_state.player_energy
-    mana_reward = state.player_mana - prev_state.player_mana
-    return 5*health_reward + 2*food_reward + 2*drink_reward + 0.5*energy_reward + 0.5*mana_reward
+    return 5*health_reward + 2*food_reward + 2*drink_reward + 0.5*energy_reward
 
 @jax.jit
 def combat_reward(prev_state: CraftaxState, state: CraftaxState):
     # NOTE: this might require additional incentive like rewarding hitting/using bow/...
     # Reward for combat engagement (killing mobs)
-    monster_killed_reward = state.monsters_killed[state.player_level] - prev_state.monsters_killed[state.player_level]
+    # killed_a_mob = jnp.where(prev_state.zombies.mask.sum() > state.zombies.mask.sum(), 1, 0)
+    reduced_zombie_health = jnp.where(prev_state.zombies.health.sum() > state.zombies.health.sum(), 5, 0)
+    reduced_skeleton_health = jnp.where(prev_state.skeletons.health.sum() > state.skeletons.health.sum(), 5, 0)
+    reduced_cow_health = jnp.where(prev_state.cows.health.sum() > state.cows.health.sum(), 5, 0)
 
     # Punish loss of health
     player_health_reward = state.player_health - prev_state.player_health
 
-    return 5 * monster_killed_reward + player_health_reward
+    return reduced_zombie_health + reduced_skeleton_health + reduced_cow_health + 0.5*player_health_reward 
 
 @jax.jit
 def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
@@ -41,7 +43,7 @@ def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
     return resource_reward
 
 def should_craft_pickaxe(inv: Inventory):
-    current_pickaxe = inv.pickaxe
+    current_pickaxe = inv.wood_pickaxe + inv.stone_pickaxe + inv.iron_pickaxe 
     # Check if pickaxe can be crafted
     can_craft_wood = inv.wood >= 1
     should_craft_wood = (current_pickaxe < 1) & can_craft_wood
@@ -49,13 +51,11 @@ def should_craft_pickaxe(inv: Inventory):
     should_craft_stone = (current_pickaxe < 2) & can_craft_stone
     can_craft_iron = (inv.iron >= 1) & (inv.stone >= 1) & (inv.wood >= 1) & (inv.coal >= 1)
     should_craft_iron = (current_pickaxe < 3) & can_craft_iron
-    can_craft_diamond = (inv.diamond >= 3) & (inv.wood >= 1)
-    should_craft_diamond = (current_pickaxe < 4) & can_craft_diamond
 
-    return (should_craft_wood | should_craft_stone | should_craft_iron | should_craft_diamond)
+    return (should_craft_wood | should_craft_stone | should_craft_iron ) 
 
 def should_craft_sword(inv: Inventory):
-    current_sword = inv.sword
+    current_sword = inv.wood_sword + inv.stone_sword + inv.iron_sword
     # Check if sword can be crafted
     can_craft_wood = inv.wood >= 1
     should_craft_wood = (current_sword < 1) & can_craft_wood
@@ -63,54 +63,19 @@ def should_craft_sword(inv: Inventory):
     should_craft_stone = (current_sword < 2) & can_craft_stone
     can_craft_iron = (inv.iron >= 1) & (inv.stone >= 1) & (inv.wood >= 1) & (inv.coal >= 1)
     should_craft_iron = (current_sword < 3) & can_craft_iron
-    can_craft_diamond = (inv.diamond >= 2) & (inv.wood >= 1)
-    should_craft_diamond = (current_sword < 4) & can_craft_diamond
 
-    return (should_craft_wood | should_craft_stone | should_craft_iron | should_craft_diamond)
-
-def should_craft_armour(inv: Inventory):
-    current_armour = inv.armour
-    can_craft_iron = (inv.iron >= 3) & (inv.coal >= 3)
-    should_craft_iron = (current_armour < 1).any() & can_craft_iron
-    can_craft_diamond = (inv.diamond >= 3)
-    should_craft_diamond = (current_armour < 2).any() & can_craft_diamond
-    return (should_craft_iron | should_craft_diamond)
-
-def should_craft_torches(inv: Inventory):
-    current_torches = inv.torches
-    can_craft_torch = (inv.coal >= 1) & (inv.wood >= 1)
-    should_craft_torch = (current_torches < 5) & can_craft_torch
-    return should_craft_torch
-
-def should_craft_arrow(inv: Inventory):
-    current_arrows = inv.arrows
-    can_craft_arrow = (inv.wood >= 1) & (inv.stone >= 1)
-    should_craft_arrow = (current_arrows < 5) & can_craft_arrow
-    return should_craft_arrow
+    return (should_craft_wood | should_craft_stone | should_craft_iron)
 
 @jax.jit
 def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
     # Reward for crafting items (pickaxe1 wood, pickaxe2 stone, ...)
-    pickaxe_reward = state.inventory.pickaxe - prev_state.inventory.pickaxe
+    pickaxe_reward = state.inventory.wood_pickaxe+state.inventory.stone_pickaxe+state.inventory.iron_pickaxe - prev_state.inventory.wood_pickaxe-prev_state.inventory.stone_pickaxe-prev_state.inventory.iron_pickaxe 
     pickaxe_reward = jnp.where(should_craft_pickaxe(state.inventory), pickaxe_reward, 0)
-    sword_reward = state.inventory.sword - prev_state.inventory.sword
+    sword_reward = state.inventory.wood_sword+state.inventory.stone_sword+state.inventory.iron_sword - prev_state.inventory.wood_sword-prev_state.inventory.stone_sword-prev_state.inventory.iron_sword
     sword_reward = jnp.where(should_craft_sword(state.inventory), sword_reward, 0)
-    arrows_reward = state.inventory.arrows - prev_state.inventory.arrows
-    arrows_reward = jnp.where(should_craft_arrow(state.inventory), arrows_reward, 0)
-    armour_reward = jnp.sum(state.inventory.armour - prev_state.inventory.armour, axis=-1)
-    armour_reward = jnp.where(should_craft_armour(state.inventory), armour_reward, 0)
-    torches_reward = state.inventory.torches - prev_state.inventory.torches
-    torches_reward = jnp.where(should_craft_torches(state.inventory), torches_reward, 0)
-    craft_reward = pickaxe_reward + sword_reward + arrows_reward + armour_reward + torches_reward
+    craft_reward = pickaxe_reward + sword_reward 
 
-
-    # Reward for enchanting items (armour, potions)
-    sword_enchant_reward = state.sword_enchantment - prev_state.sword_enchantment
-    bow_enchant_reward = state.bow_enchantment - prev_state.bow_enchantment
-    armour_enchant_reward = jnp.sum(state.armour_enchantments - prev_state.armour_enchantments, axis=-1)
-    enchant_reward = sword_enchant_reward + bow_enchant_reward + armour_enchant_reward
-
-    return craft_reward + enchant_reward
+    return craft_reward
 
 @jax.jit
 def explore(prev_state: CraftaxState, state: CraftaxState):
@@ -119,23 +84,6 @@ def explore(prev_state: CraftaxState, state: CraftaxState):
     explore_reward = jnp.where(state.player_position[1] != prev_state.player_position[1], explore_reward, 0)
     return explore_reward 
 
-@jax.jit
-def level_progression_reward(prev_state: CraftaxState, state: CraftaxState):
-    # reward moving closer to the next ladder
-    next_down_ladder_pos = state.down_ladders[state.player_level]
-    prev_down_ladder_pos = prev_state.down_ladders[prev_state.player_level]
-    distance = jnp.linalg.norm(
-        state.player_position - next_down_ladder_pos
-    )
-    prev_distance = jnp.linalg.norm(
-        prev_state.player_position - prev_down_ladder_pos
-    )
-    reward = jnp.where(
-        distance < prev_distance,
-        1.0,
-        -1.0,
-    )
-    return reward
 
 @partial(jax.jit, static_argnums=(0))
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState):
@@ -150,10 +98,9 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
     SKILLS = {
         'SURVIVAL': 0,
         'COMBAT': 1,
-        'RESOURCE': 2,
-        'CRAFT': 3,
+        'CRAFT': 2,
+        'RESOURCE': 3,
         'EXPLORE': 4,
-        'LEVEL_PROGRESS': 5
     }
 
     # 1. Survival emergencies (health, hunger, thirst, energy)
@@ -167,54 +114,24 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
     # 2. Combat priority - check nearby enemies
     player_pos = state.player_position[:, None, :]  # [N, 1, 2]
 
-    #mobs_positionl.shape == (N, 9, 3, 2)
-    # mobs_mask shape == (N, 9, 3)
-    # (N envs, 9 levels, 3 mobs, 2 positions) 
-    # player_position.shape == (N, 2)
-    # state.player_level.shape == (N, 1)
-    # want to get melee_mask with shape (N, 3), where the axis 1 is selected by player_level
-    curr_level_melee_mask = state.melee_mobs.mask[jnp.arange(state.melee_mobs.mask.shape[0]), state.player_level]  # [N, 3]
-    curr_level_melee_pos = state.melee_mobs.position[jnp.arange(state.melee_mobs.position.shape[0]), state.player_level]  # [N, 3, 2]
+    zombie_distances = jnp.abs(player_pos - state.zombies.position)  # [N, 2] - [N, M, 2] = [N, M, 2]
+    zombie_distances = jnp.linalg.norm(zombie_distances, axis=-1)  # [N, M]
+    zombie_distances = jnp.where(state.zombies.mask, zombie_distances, jnp.inf)  # [N, M, 2]
+    skeleton_distances = jnp.abs(player_pos - state.skeletons.position)  # [N, 2] - [N, M, 2] = [N, M, 2]
+    skeleton_distances = jnp.linalg.norm(skeleton_distances, axis=-1)  # [N, M]
+    skeleton_distances = jnp.where(state.skeletons.mask, skeleton_distances, jnp.inf)  # [N, M, 2]
+    cow_distances = jnp.abs(player_pos - state.cows.position)  # [N, 2] - [N, M, 2] = [N, M, 2]
+    cow_distances = jnp.linalg.norm(cow_distances, axis=-1)  # [N, M]
+    cow_distances = jnp.where(state.cows.mask, cow_distances, jnp.inf)  # [N, M, 2]
 
-    # Check melee mobs
-    melee_dists = jnp.sum(
-        jnp.abs(curr_level_melee_pos - player_pos), 
-        axis=-1
-    )  # [N, 3] 
-    melee_near = jnp.any(
-        (melee_dists <= 2) & curr_level_melee_mask,
-        axis=-1
-    )  # [N,]
-
-    curr_level_ranged_mask = state.ranged_mobs.mask[jnp.arange(state.ranged_mobs.mask.shape[0]), state.player_level]  # [N, 2]
-    curr_level_ranged_pos = state.ranged_mobs.position[jnp.arange(state.ranged_mobs.position.shape[0]), state.player_level]  # [N, 2, 2]
-
-    # Check ranged mobs
-    ranged_dists = jnp.sum(
-        jnp.abs(curr_level_ranged_pos - player_pos),
-        axis=-1
-    )  # [N, 2]
-    ranged_near = jnp.any(
-        (ranged_dists <= 2) & curr_level_ranged_mask, 
-        axis=-1
-    )  # [N, ]
-
-    combat_mask = melee_near | ranged_near  # [N]
-
-    # Current problem is that 
-    # we prefer collection of resources over crafting
-    # but crafting is required for specific resources
-    # So instead, check if we have enough resources to craft -> craft
-    # if not -> collect resources
+    combat_mask = jnp.logical_or(jnp.logical_or(jnp.any(zombie_distances <= 5, axis=-1),
+                jnp.any(skeleton_distances <= 10, axis=-1)),
+                jnp.any(cow_distances <= 2, axis=-1))# [N, M] -> [N]
 
     # 3. If crafting possible, do it
     
     craft_mask = (should_craft_pickaxe(state.inventory) |
-                 should_craft_sword(state.inventory) |
-                 should_craft_armour(state.inventory) |
-                 should_craft_torches(state.inventory) |
-                 should_craft_arrow(state.inventory))
-
+                 should_craft_sword(state.inventory))
     # 3. Resource needs (tools/materials)
 
     # Should have everything stone in level 1
@@ -228,32 +145,10 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
 
     inv = state.inventory
     resource_mask = (
-        (state.player_level < 3) & ((inv.stone < 5) | (inv.wood < 5) | (inv.coal < 5)) |
-        (state.player_level > 2) & (state.player_level < 5) & ((inv.iron < 5) | (inv.coal < 5)) |
-        (state.player_level > 4) & ((inv.diamond < 5))
+        ((inv.stone < 5) | (inv.wood < 5) | (inv.coal < 5)) |
+        (state.inventory.stone_pickaxe > 0) & ((inv.iron < 5) | (inv.coal < 5)) |
+        (state.inventory.iron_pickaxe > 0) & ((inv.diamond < 1))
     )
-
-    # old
-    # # 4. Crafting opportunities
-
-    # # player should have everything stone in level 1
-    # # and at least iron in level 2
-    # # and diamond in level 5
-
-    # craft_mask = (
-    #     (state.player_level < 3) & ((inv.torches < 5) | (inv.pickaxe < 2) | (inv.sword < 2) | (inv.armour < 2).any(axis=-1)) |
-    #     (state.player_level > 2) & (state.player_level < 5) & ((inv.torches < 5) | (inv.pickaxe < 3) | (inv.sword < 3) | (inv.armour < 3).any(axis=-1)) |
-    #     (state.player_level > 4) & ((inv.pickaxe < 4) | (inv.sword < 4) | (inv.armour < 4).any(axis=-1)) 
-    # )
-
-    # 5. Level progression (current level > 0 and 8 kills)
-    level_idx = state.player_level[:, None]  # [N, 1]
-    kills = jnp.take_along_axis(
-        state.monsters_killed, 
-        level_idx, 
-        axis=1
-    ).squeeze(-1)  # [N]
-    level_mask = (state.player_level > 0) & (kills >= 8)  # [N]
 
     # Priority-based selection using jnp.select
     selection = jnp.select(
@@ -262,17 +157,15 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
             combat_mask,
             craft_mask,
             resource_mask,
-            level_mask,
         ],
         choicelist=[
-            jnp.full(state.player_level.shape, SKILLS['SURVIVAL']),
-            jnp.full(state.player_level.shape, SKILLS['COMBAT']),
-            jnp.full(state.player_level.shape, SKILLS['CRAFT']),
-            jnp.full(state.player_level.shape, SKILLS['RESOURCE']),
-            jnp.full(state.player_level.shape, SKILLS['LEVEL_PROGRESS']),
+            jnp.full(state.player_direction.shape, SKILLS['SURVIVAL']),
+            jnp.full(state.player_direction.shape, SKILLS['COMBAT']),
+            jnp.full(state.player_direction.shape, SKILLS['CRAFT']),
+            jnp.full(state.player_direction.shape, SKILLS['RESOURCE']),
         ],
-        # 6. Default: explore the map
-        default=jnp.full(state.player_level.shape, SKILLS['EXPLORE'])
+        # Default: explore the map
+        default=jnp.full(state.player_direction.shape, SKILLS['EXPLORE'])
     )
     return jax.nn.one_hot(
         selection,

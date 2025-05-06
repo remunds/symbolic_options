@@ -6,19 +6,20 @@ import jax
 import wandb
 import hydra
 from omegaconf import OmegaConf
-from jaxtari.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis as SeaquestRenderer
-from jaxtari.jax_kangaroo import Kangaroo as JaxKangaroo, Renderer as KangarooRenderer
-from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxtari
-from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxtari
+from jaxatari.games.jax_seaquest import JaxSeaquest, Renderer_AtraJaxis as SeaquestRenderer
+from jaxatari.games.jax_kangaroo import JaxKangaroo, Renderer_AtraJaxis as KangarooRenderer
+from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
+from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
 from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
 from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
 
-from jaxtari.wrappers import FlattenObservationWrapper 
+from jaxatari.wrappers import FlattenObservationWrapper, AtariWrapper
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
-from symbolic_options.reward_functions.craftax import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, level_progression_reward 
-from symbolic_options.utils.video_recorder import CraftaxRenderer
+# from symbolic_options.reward_functions.craftax import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, level_progression_reward 
+from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore
+from symbolic_options.utils.video_recorder import CraftaxRenderer, CraftaxClassicRenderer
 
 from craftax.craftax_env import make_craftax_env_from_name
 from symbolic_options.purejaxql.craftax_wrappers import (
@@ -31,8 +32,9 @@ from symbolic_options.purejaxql.craftax_wrappers import (
 def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
-        from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, conditional_meta_policy, combined_meta_policy 
-        from jaxtari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
+        from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
+        from jaxatari.wrappers import MultiRewardLogWrapper
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
@@ -43,22 +45,25 @@ def outer_make_train(config):
         env = JaxSeaquest(reward_funcs=reward_funcs)
         renderer = SeaquestRenderer()
         env = FlattenObservationWrapper(env)
-        # env = AtariWrapper(env)
+        env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from jaxtari.wrappers import MultiRewardLogWrapper
+        from jaxatari.wrappers import MultiRewardLogWrapper
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
         env = JaxKangaroo(reward_funcs=reward_funcs)
         renderer = KangarooRenderer() 
         env = FlattenObservationWrapper(env)
-        # env = AtariWrapper(env)
+        env = AtariWrapper(env)
         env = MultiRewardLogWrapper(env)
-    elif config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
-        from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
+    elif "Craftax" in config.get("ENV_NAME", None):
+        # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
+        from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper
-        reward_funcs = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
-        renderer = CraftaxRenderer()
+        # reward_funcs_craftax = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
+        reward_funcs = [survival_reward, combat_reward, crafting_reward, resource_collection_reward, explore]
+        # renderer = CraftaxRenderer()
+        renderer = CraftaxClassicRenderer()
         basic_env = make_craftax_env_from_name(
             config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
         )
@@ -105,7 +110,7 @@ def outer_make_train(config):
     else:
         meta_policy = None
 
-    if config.get("ENV_NAME", None) == "Craftax-Symbolic-v1":
+    if "Craftax" in config.get("ENV_NAME", None):
         if config.get("HIERARCHICAL", False):
             make_train_fn = make_train_hier_craftax
         else:
@@ -114,11 +119,11 @@ def outer_make_train(config):
         return make_train_fn(config, env, test_env, env_params, meta_policy, meta_policy_llm, renderer)
     else:
         if config.get("HIERARCHICAL", False):
-            make_train_fn = make_train_hier_jaxtari
+            make_train_fn = make_train_hier_jaxatari
         else:
-            make_train_fn = make_train_pqn_jaxtari
-
-    return make_train_fn(config, env, meta_policy, renderer)
+            make_train_fn = make_train_pqn_jaxatari
+        meta_policy_llm = llm_meta_policy
+        return make_train_fn(config, env, meta_policy, meta_policy_llm, renderer)
 
 def single_run(config):#
     config = {**config, **config["alg"]}
@@ -147,6 +152,7 @@ def single_run(config):#
     # time compilation  
     print("Compiling...")
     start = time.time()
+    # with jax.profiler.trace("outputs/jax-trace", create_perfetto_link=True):
     train_vjit.lower(rngs).compile()
     print(f"Compilation took {time.time()-start} seconds.")
     outs = jax.block_until_ready(train_vjit(rngs))

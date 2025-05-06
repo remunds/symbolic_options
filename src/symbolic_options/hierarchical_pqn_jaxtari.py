@@ -1,23 +1,16 @@
-import os
 import jax
-import jax.experimental
 import jax.numpy as jnp
-from jaxtari.renderers import AtraJaxisRenderer, PyGameRenderer
 import numpy as np
 from typing import Any
 from rtpt import RTPT
 
-from flax.linen.initializers import constant, orthogonal
 import chex
 import optax
 import flax.linen as nn
 from flax.training.train_state import TrainState
 import wandb
-import threading
-import pygame
 
 
-from jaxtari.wrappers import MultiRewardLogEnvState
 from symbolic_options.utils.video_recorder import video_callback
 
 class QNetwork(nn.Module):
@@ -79,7 +72,7 @@ def rtpt_callback():
     global rtpt
     rtpt.step()
 
-def make_train(config, env, meta_policy, renderer):
+def make_train(config, env, meta_policy, meta_policy_llm, renderer):
     global curr_renderer
     global rtpt
     curr_renderer = renderer
@@ -197,17 +190,17 @@ def make_train(config, env, meta_policy, renderer):
         rng_keys = jax.random.split(rng, num_agents)
         train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, None, None))(rng_keys, network, lr)
 
-        meta_policy_string = config.get("META_POLICY", "llm")
-        if meta_policy_string == "learned" or meta_policy_string == "combined": 
-            meta_network = QNetwork(
-                action_dim=num_agents,
-                norm_type=config["NORM_TYPE"],
-                norm_input=config.get("NORM_INPUT", False),
-            )
-            meta_train_state = create_agent(rng, meta_network, lr_meta)
-        else:
-            meta_network = None
-            meta_train_state = None
+        # meta_policy_string = config.get("META_POLICY", "llm")
+        # if meta_policy_string == "learned" or meta_policy_string == "combined": 
+        meta_network = QNetwork(
+            action_dim=num_agents,
+            norm_type=config["NORM_TYPE"],
+            norm_input=config.get("NORM_INPUT", False),
+        )
+        meta_train_state = create_agent(rng, meta_network, lr_meta)
+        # else:
+        #     meta_network = None
+        #     meta_train_state = None
 
         # TRAINING LOOP
         def _update_step(runner_state, unused):
@@ -237,50 +230,116 @@ def make_train(config, env, meta_policy, renderer):
 
                 all_actions, all_q_vals = jax.vmap(compute_actions)(train_states)
 
-                # active_agent_q_vals = meta_policy(env_state) # (128,3)
-                active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
-                # NOTE: Currently, the only way to explore is by sampling rather than greedy picking
-                # Instead, we could also do eps-greedy for the meta-policy...
-                # either select directly or combine with action_q_vals 
-                if config.get("META_POLICY", "llm") == "conditional":
-                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1) # (128,3)
-                    max_q_vals = jnp.max(all_q_vals, axis=-1) # (3, 128)
-                    max_q_vals = jnp.transpose(max_q_vals) # (128,3)
-                    # combine agent_probs with max q_vals of all agents
-                    combined_q = agent_probs * max_q_vals # (128,3)
-                elif config.get("LLM_PRETRAIN", False):
-                    # meta_policy returns both seperated
-                    llm_q, both_q = active_agent_q_vals
-                    combined_q = jax.lax.cond(
+                meta_policy_mode = config.get("META_POLICY", "llm")
+                llm_pretrain = config.get("LLM_PRETRAIN", False)
+                random_pretrain = config.get("RANDOM_PRETRAIN", False)
+
+                # Combine Q-values depending on mode
+                def handle_conditional():
+                    active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1)  # (128, 3)
+                    max_q_vals = jnp.transpose(jnp.max(all_q_vals, axis=-1))    # (128, 3)
+                    return agent_probs * max_q_vals                              # (128, 3)
+
+                def handle_llm_pretrain():
+                    # llm pretrainining requires access to both, llm meta-policy and combined
+                    llm_q= meta_policy_llm(meta_network, meta_train_state, last_obs, env_state)
+                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                    return jax.lax.cond(
                         train_states.n_updates[0] < config["PRETRAIN_LEN"],
                         lambda _: llm_q,
                         lambda _: both_q,
-                        operand=None,   
+                        operand=None
                     )
-                elif config.get("RANDOM_PRETRAIN", False): 
-                    # meta_policy returns both seperated
-                    _, both_q = active_agent_q_vals
+
+                def handle_random_pretrain():
+                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state) 
                     random_q = jax.random.randint(
                         rng_a, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
                     ).astype(jnp.float32)
-                    combined_q = jax.lax.cond(
+                    return jax.lax.cond(
                         train_states.n_updates[0] < config["PRETRAIN_LEN"],
                         lambda _: random_q,
                         lambda _: both_q,
-                        operand=None,   
+                        operand=None
                     )
-                else:
-                    combined_q = active_agent_q_vals 
 
-                # allow for precomputation: use llm meta-policy for first N update-steps, switch to learnining afterwards
+                def handle_default():
+                    return meta_policy(meta_network, meta_train_state, last_obs, env_state) 
 
-                # select active agent with highest q_val * valuation (or sample)
-                if config.get("META_GREEDY", True): 
-                    active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
-                else:
-                    _rng_s = jax.random.split(rng_s, config["NUM_ENVS"])
-                    eps = jnp.full(config["NUM_ENVS"], eps_meta_scheduler(meta_train_state.n_updates))
-                    active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
+                # Decide which Q-combination strategy to apply
+                combined_q = jax.lax.switch(
+                    jnp.array([
+                        llm_pretrain,
+                        random_pretrain,
+                        meta_policy_mode == "conditional",
+                        True # default if nothing else is true
+                    ], dtype=jnp.bool_).argmax(),  # priority order
+                    [handle_llm_pretrain, handle_random_pretrain, handle_conditional, handle_default],
+                )
+
+                # Now select active agent — greedy vs exploratory
+                use_greedy = config.get("META_GREEDY", True)
+
+                def select_greedy(_):
+                    return jnp.argmax(combined_q, axis=-1)  # (128,)
+
+                def select_exploratory(_):
+                    rng_split = jax.random.split(rng_s, config["NUM_ENVS"])
+                    eps = jnp.full((config["NUM_ENVS"],), eps_meta_scheduler(meta_train_state.n_updates))
+                    return jax.vmap(eps_greedy_exploration)(rng_split, combined_q, eps)
+
+                active_agent = jax.lax.cond(
+                    use_greedy,
+                    select_greedy,
+                    select_exploratory,
+                    operand=None
+                )
+
+                # # active_agent_q_vals = meta_policy(env_state) # (128,3)
+                # active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                # # NOTE: Currently, the only way to explore is by sampling rather than greedy picking
+                # # Instead, we could also do eps-greedy for the meta-policy...
+                # # either select directly or combine with action_q_vals 
+                # if config.get("META_POLICY", "llm") == "conditional":
+                #     agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1) # (128,3)
+                #     max_q_vals = jnp.max(all_q_vals, axis=-1) # (3, 128)
+                #     max_q_vals = jnp.transpose(max_q_vals) # (128,3)
+                #     # combine agent_probs with max q_vals of all agents
+                #     combined_q = agent_probs * max_q_vals # (128,3)
+                # elif config.get("LLM_PRETRAIN", False):
+                #     # meta_policy returns both seperated
+                #     llm_q, both_q = active_agent_q_vals
+                #     combined_q = jax.lax.cond(
+                #         train_states.n_updates[0] < config["PRETRAIN_LEN"],
+                #         lambda _: llm_q,
+                #         lambda _: both_q,
+                #         operand=None,   
+                #     )
+                # elif config.get("RANDOM_PRETRAIN", False): 
+                #     # meta_policy returns both seperated
+                #     _, both_q = active_agent_q_vals
+                #     random_q = jax.random.randint(
+                #         rng_a, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
+                #     ).astype(jnp.float32)
+                #     combined_q = jax.lax.cond(
+                #         train_states.n_updates[0] < config["PRETRAIN_LEN"],
+                #         lambda _: random_q,
+                #         lambda _: both_q,
+                #         operand=None,   
+                #     )
+                # else:
+                #     combined_q = active_agent_q_vals 
+
+                # # allow for precomputation: use llm meta-policy for first N update-steps, switch to learnining afterwards
+
+                # # select active agent with highest q_val * valuation (or sample)
+                # if config.get("META_GREEDY", True): 
+                #     active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
+                # else:
+                #     _rng_s = jax.random.split(rng_s, config["NUM_ENVS"])
+                #     eps = jnp.full(config["NUM_ENVS"], eps_meta_scheduler(meta_train_state.n_updates))
+                #     active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
 
                 # select the q_vals and action of the active agent
                 q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
@@ -568,55 +627,123 @@ def make_train(config, env, meta_policy, renderer):
                     eps
                 )
 
-                # actions shape: (num_agents, num_envs)
-                active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
-                # either select directly or combine with action_q_vals 
-                if config.get("META_POLICY", "llm") == "conditional":
-                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1) # (128,3)
-                    max_q_vals = jnp.max(q_vals, axis=-1) # (3, 128)
-                    max_q_vals = jnp.transpose(max_q_vals) # (128,3)
-                    # combine agent_probs with max q_vals of all agents
-                    combined_q = agent_probs * max_q_vals # (128,3)
-                elif config.get("LLM_PRETRAIN", False): 
-                    # meta_policy returns both seperated
-                    llm_q, both_q = active_agent_q_vals
-                    combined_q = jax.lax.cond(
+                meta_policy_mode = config.get("META_POLICY", "llm")
+                llm_pretrain = config.get("LLM_PRETRAIN", False)
+                random_pretrain = config.get("RANDOM_PRETRAIN", False)
+
+                # Combine Q-values depending on mode
+                def handle_conditional():
+                    active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1)  # (128, 3)
+                    max_q_vals = jnp.transpose(jnp.max(q_vals, axis=-1))    # (128, 3)
+                    return agent_probs * max_q_vals                              # (128, 3)
+
+                def handle_llm_pretrain():
+                    # llm pretrainining requires access to both, llm meta-policy and combined
+                    llm_q= meta_policy_llm(meta_network, meta_train_state, last_obs, env_state)
+                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                    return jax.lax.cond(
                         train_states.n_updates[0] < config["PRETRAIN_LEN"],
-                        # train_states.n_updates < config["LLM_PRETRAIN"],
                         lambda _: llm_q,
                         lambda _: both_q,
-                        operand=None,   
+                        operand=None
                     )
-                elif config.get("RANDOM_PRETRAIN", False):
-                    # meta_policy returns both seperated
-                    _, both_q = active_agent_q_vals
+
+                def handle_random_pretrain():
+                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state) 
                     random_q = jax.random.randint(
                         rng, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
-                    ).astype(jnp.float32)  # (128,3)
-                    # sample random actions,
-                    combined_q = jax.lax.cond(
+                    ).astype(jnp.float32)
+                    return jax.lax.cond(
                         train_states.n_updates[0] < config["PRETRAIN_LEN"],
                         lambda _: random_q,
                         lambda _: both_q,
-                        operand=None,   
+                        operand=None
                     )
-                else:
-                    combined_q = active_agent_q_vals 
 
-                # select active agent with highest q_val * valuation
-                # NOTE: instead of greedy, we could also sample from the distribution
-                if config.get("META_GREEDY", True): 
-                    active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
-                else:
-                    # rng, _rng_s = jax.random.split(rng)
-                    # #NOTE: not sure if this is the best way to create the log-distribution 
-                    # combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
-                    # combined_log_probs = jnp.log(combined_probs)
-                    # active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
+                def handle_default():
+                    return meta_policy(meta_network, meta_train_state, last_obs, env_state) 
 
-                    _rng_s = jax.random.split(rng, config["NUM_ENVS"])
-                    eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"])
-                    active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
+                # Decide which Q-combination strategy to apply
+                combined_q = jax.lax.switch(
+                    jnp.array([
+                        llm_pretrain,
+                        random_pretrain,
+                        meta_policy_mode == "conditional",
+                        True # default if nothing else is true
+                    ], dtype=jnp.bool_).argmax(),  # priority order
+                    [handle_llm_pretrain, handle_random_pretrain, handle_conditional, handle_default],
+                )
+
+                # Now select active agent — greedy vs exploratory
+                use_greedy = config.get("META_GREEDY", True)
+
+                def select_greedy(_):
+                    return jnp.argmax(combined_q, axis=-1)  # (128,)
+
+                def select_exploratory(_):
+                    rng_split = jax.random.split(rng, config["TEST_NUM_ENVS"])
+
+                    eps = jnp.full((config["TEST_NUM_ENVS"],), config["EPS_TEST"])
+                    # eps = jnp.full((config["TEST_NUM_ENVS"],), eps_meta_scheduler(meta_train_state.n_updates))
+                    return jax.vmap(eps_greedy_exploration)(rng_split, combined_q, eps)
+
+                active_agent = jax.lax.cond(
+                    use_greedy,
+                    select_greedy,
+                    select_exploratory,
+                    operand=None
+                )
+
+                # # actions shape: (num_agents, num_envs)
+                # active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+                # # either select directly or combine with action_q_vals 
+                # if config.get("META_POLICY", "llm") == "conditional":
+                #     agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1) # (128,3)
+                #     max_q_vals = jnp.max(q_vals, axis=-1) # (3, 128)
+                #     max_q_vals = jnp.transpose(max_q_vals) # (128,3)
+                #     # combine agent_probs with max q_vals of all agents
+                #     combined_q = agent_probs * max_q_vals # (128,3)
+                # elif config.get("LLM_PRETRAIN", False): 
+                #     # meta_policy returns both seperated
+                #     llm_q, both_q = active_agent_q_vals
+                #     combined_q = jax.lax.cond(
+                #         train_states.n_updates[0] < config["PRETRAIN_LEN"],
+                #         # train_states.n_updates < config["LLM_PRETRAIN"],
+                #         lambda _: llm_q,
+                #         lambda _: both_q,
+                #         operand=None,   
+                #     )
+                # elif config.get("RANDOM_PRETRAIN", False):
+                #     # meta_policy returns both seperated
+                #     _, both_q = active_agent_q_vals
+                #     random_q = jax.random.randint(
+                #         rng, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
+                #     ).astype(jnp.float32)  # (128,3)
+                #     # sample random actions,
+                #     combined_q = jax.lax.cond(
+                #         train_states.n_updates[0] < config["PRETRAIN_LEN"],
+                #         lambda _: random_q,
+                #         lambda _: both_q,
+                #         operand=None,   
+                #     )
+                # else:
+                #     combined_q = active_agent_q_vals 
+
+                # # select active agent with highest q_val * valuation
+                # # NOTE: instead of greedy, we could also sample from the distribution
+                # if config.get("META_GREEDY", True): 
+                #     active_agent = jnp.argmax(combined_q, axis=-1) # (128,)
+                # else:
+                #     # rng, _rng_s = jax.random.split(rng)
+                #     # #NOTE: not sure if this is the best way to create the log-distribution 
+                #     # combined_probs = jax.nn.softmax(combined_q, axis=-1) # (128,3)
+                #     # combined_log_probs = jnp.log(combined_probs)
+                #     # active_agent = jax.random.categorical(_rng_s, combined_log_probs, -1)
+
+                #     _rng_s = jax.random.split(rng, config["NUM_ENVS"])
+                #     eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"])
+                #     active_agent = jax.vmap(eps_greedy_exploration)(_rng_s, combined_q, eps)
 
                 # active_agent shape: (num_envs)
                 combined_q_vid = combined_q[0]

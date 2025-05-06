@@ -1,23 +1,15 @@
-import os
 import jax
-import jax.experimental
 import jax.numpy as jnp
-from jaxtari.renderers import AtraJaxisRenderer, PyGameRenderer
 import numpy as np
 from typing import Any
 from rtpt import RTPT
 
-from flax.linen.initializers import constant, orthogonal
 import chex
 import optax
 import flax.linen as nn
 from flax.training.train_state import TrainState
 import wandb
-import threading
-import pygame
-from functools import partial
 
-from jaxtari.wrappers import MultiRewardLogEnvState
 from symbolic_options.purejaxql.batch_renorm import BatchRenorm
 from symbolic_options.utils.video_recorder import video_callback
 

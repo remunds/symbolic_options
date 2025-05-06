@@ -7,10 +7,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pygame
-from jaxtari.renderers import AtraJaxisRenderer, PyGameRenderer
-from jaxtari.wrappers import MultiRewardLogEnvState as JaxtariMultiRewardLogEnvState
+from jaxatari.renderers import AtraJaxisRenderer, PyGameRenderer
+from jaxatari.wrappers import AtariState, MultiRewardLogEnvState as JaxtariMultiRewardLogEnvState
 from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
-from craftax.craftax.renderer import render_craftax_pixels
+from craftax.craftax.renderer import render_craftax_pixels # for craftax
+from craftax.craftax_classic.renderer import render_craftax_pixels as render_craftax_classic_pixels# for craftax_classic
 from craftax.craftax.constants import (
     BLOCK_PIXEL_SIZE_HUMAN,
 )
@@ -84,6 +85,11 @@ class CraftaxRenderer:
     def render(self, craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN):
         return render_craftax_pixels(craftax_state, block_pixel_size=block_pixel_size)
 
+class CraftaxClassicRenderer(CraftaxRenderer):
+    @partial(jax.jit, static_argnums=(0,2))
+    def render(self, craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN):
+        return render_craftax_classic_pixels(craftax_state, block_pixel_size=block_pixel_size)
+
 
 video_thread = None
 
@@ -111,6 +117,8 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer):
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
     if isinstance(states, JaxtariMultiRewardLogEnvState) or isinstance(states, CraftaxMultiRewardLogEnvState):
+        states = states.env_state
+    if isinstance(states, AtariState):
         states = states.env_state
 
     # num_states is where the first done is True
@@ -161,6 +169,7 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer):
         new_frames[i] = sidebar_renderer.render(frames[i], texts, active_agents[i])
     sidebar_renderer.close()
 
-    video = wandb.Video(new_frames, fps=60, format="mp4")
+    fps = 30 #if not isinstance(renderer, CraftaxRenderer) else 30
+    video = wandb.Video(new_frames, fps=fps, format="mp4")
     wandb.log({f"video_{step}": video}, step=wandb.run.step)
     print("Video done.")

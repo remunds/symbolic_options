@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
-from jaxtari.wrappers import MultiRewardLogEnvState, AtariState
-from jaxtari.jax_kangaroo import KangarooState
+from jaxatari.wrappers import MultiRewardLogEnvState, AtariState
+from jaxatari.games.jax_kangaroo import KangarooState
 
 # @jax.jit
 # def navigate_reward(prev_state: KangarooState, state: KangarooState):
@@ -134,8 +134,11 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     Mutually exclusive.
     """
     state= env_state
-    if isinstance(env_state, MultiRewardLogEnvState) or isinstance(env_state, AtariState):
+
+    if isinstance(env_state, MultiRewardLogEnvState):
         state = env_state.env_state
+    if isinstance(state, AtariState):
+        state = state.env_state
     # 0: navigate, 1: handle enemies, 2: collect fruits
     
     # default is navigation
@@ -179,8 +182,8 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     enemy_close = jnp.sum(enemy_close, axis=1) #(128)
 
     # if coco is close, handle enemies
-    coco_positions_x = jnp.concatenate((state.level.falling_coco_position[..., :1], state.level.morris_coco_positions[..., 0]), axis=-1) #(128, 5)
-    coco_positions_y = jnp.concatenate((state.level.falling_coco_position[..., 1:], state.level.morris_coco_positions[..., 1]), axis=-1) #(128, 5)
+    coco_positions_x = jnp.concatenate((state.level.falling_coco_position[..., :1], state.level.coco_positions[..., 0]), axis=-1) #(128, 5)
+    coco_positions_y = jnp.concatenate((state.level.falling_coco_position[..., 1:], state.level.coco_positions[..., 1]), axis=-1) #(128, 5)
     dx = coco_positions_x - state.player.x[:, None] #(128, 5)
     dy = coco_positions_y - state.player.y[:, None] #(128, 5)
     coco_dist_sq = dx ** 2 + dy ** 2
@@ -204,8 +207,10 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     Non mutually exclusive.
     """
     state= env_state
-    if isinstance(env_state, MultiRewardLogEnvState) or isinstance(env_state, AtariState):
+    if isinstance(env_state, MultiRewardLogEnvState):
         state = env_state.env_state
+    if isinstance(state, AtariState):
+        state = state.env_state
     # 0: navigate, 1: handle enemies, 2: collect fruits
 
     # if fruit or bell is close, collect fruits
@@ -248,8 +253,8 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     enemy_close = jnp.sum(enemy_close, axis=1) #(128)
 
     # if coco is close, handle enemies
-    coco_positions_x = jnp.concatenate((state.level.falling_coco_position[..., :1], state.level.morris_coco_positions[..., 0]), axis=-1) #(128, 5)
-    coco_positions_y = jnp.concatenate((state.level.falling_coco_position[..., 1:], state.level.morris_coco_positions[..., 1]), axis=-1) #(128, 5)
+    coco_positions_x = jnp.concatenate((state.level.falling_coco_position[..., :1], state.level.coco_positions[..., 0]), axis=-1) #(128, 5)
+    coco_positions_y = jnp.concatenate((state.level.falling_coco_position[..., 1:], state.level.coco_positions[..., 1]), axis=-1) #(128, 5)
     dx = coco_positions_x - state.player.x[:, None] #(128, 5)
     dy = coco_positions_y - state.player.y[:, None] #(128, 5)
     coco_dist_sq = dx ** 2 + dy ** 2

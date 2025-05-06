@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
-from jaxtari.wrappers import MultiRewardLogEnvState, AtariState
-from jaxtari.jax_seaquest import SeaquestState
+from jaxatari.wrappers import MultiRewardLogEnvState, AtariState
+from jaxatari.games.jax_seaquest import SeaquestState
 
 @jax.jit
 def idle_reward(prev_state: SeaquestState, state: SeaquestState):
@@ -30,7 +30,8 @@ def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
 @jax.jit
 def upward_reward(prev_state: SeaquestState, state: SeaquestState):
     # return 1 if player is moving up 
-    reward = jnp.where(state.player_y == prev_state.player_y-1, 0.01, 0)
+    #TODO: was 0.01 before
+    reward = jnp.where(state.player_y == prev_state.player_y-1, 0.5, 0)
     # dying punishment
     reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
@@ -48,8 +49,10 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestStat
     """
     Mutually exclusive.
     """
-    if isinstance(env_state, MultiRewardLogEnvState) or isinstance(env_state, AtariState):
+    if isinstance(env_state, MultiRewardLogEnvState):
         state = env_state.env_state
+    if isinstance(state, AtariState):
+        state = state.env_state
     # 0: fight, 1: collect, 2: go up
 
     # collect (always if divers are present) 
@@ -149,7 +152,7 @@ def divers_default_policy(network, meta_train_state, last_obs, env_state: Seaque
         state = state.env_state
 
     # fight  (if enemy is close)
-    danger_dist_sq = 50 ** 2
+    danger_dist_sq = 40 ** 2
     enemy_positions = jnp.concatenate([state.shark_positions, state.sub_positions], axis=1) 
     active_mask = jnp.where(enemy_positions[..., 2] != 0, 1, 0) #(128, 24)
 
@@ -178,7 +181,7 @@ def divers_default_policy(network, meta_train_state, last_obs, env_state: Seaque
 
     # add some randomness 
     # q_vals = q_vals + jax.random.uniform(jax.random.PRNGKey(0), shape=q_vals.shape) * 0.01
-    return q_vals
+    return q_vals.astype(jnp.float32)
 
 # @jax.jit
 def shoot_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
@@ -209,7 +212,7 @@ def shoot_default_policy(network, meta_train_state, last_obs, env_state: Seaques
     q_vals = jnp.logical_or(divers_q, up_q)
 
     # add some randomness 
-    q_vals = q_vals + jax.random.uniform(jax.random.PRNGKey(0), shape=q_vals.shape) * 0.01
+    # q_vals = q_vals + jax.random.uniform(jax.random.PRNGKey(0), shape=q_vals.shape) * 0.01
     return q_vals
 
 
@@ -240,15 +243,15 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Seaques
     # jax.debug.print("combined: {}", combined_q_vals[0])
     return combined_q_vals
 
-def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state: SeaquestState):
-    # combine learned and conditional meta policy
-    # conditional_q_vals = conditional_meta_policy(network, meta_train_state, last_obs, env_state)
-    llm_q_vals = llm_meta_policy(network, meta_train_state, last_obs, env_state)
-    conditional_q_vals = shoot_default_policy(network, meta_train_state, last_obs, env_state)
-    # conditional_q_vals = divers_default_policy(network, meta_train_state, last_obs, env_state)
-    # jax.debug.print("cond: {}", conditional_q_vals[0])
-    learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
-    # jax.debug.print("learned: {}", learned_q_vals[0])
-    combined_q_vals = conditional_q_vals * learned_q_vals
-    # jax.debug.print("combined: {}", combined_q_vals[0])
-    return llm_q_vals, combined_q_vals
+# def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state: SeaquestState):
+#     # combine learned and conditional meta policy
+#     # conditional_q_vals = conditional_meta_policy(network, meta_train_state, last_obs, env_state)
+#     llm_q_vals = llm_meta_policy(network, meta_train_state, last_obs, env_state)
+#     conditional_q_vals = shoot_default_policy(network, meta_train_state, last_obs, env_state)
+#     # conditional_q_vals = divers_default_policy(network, meta_train_state, last_obs, env_state)
+#     # jax.debug.print("cond: {}", conditional_q_vals[0])
+#     learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
+#     # jax.debug.print("learned: {}", learned_q_vals[0])
+#     combined_q_vals = conditional_q_vals * learned_q_vals
+#     # jax.debug.print("combined: {}", combined_q_vals[0])
+#     return llm_q_vals, combined_q_vals
