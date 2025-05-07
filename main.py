@@ -56,6 +56,16 @@ def outer_make_train(config):
         env = AtariWrapper(env, sticky_actions=False)
         env = FlattenObservationWrapper(env)
         env = MultiRewardLogWrapper(env)
+    # only quick PQN test:
+    elif config.get("ENV_NAME", None) == "Pong":
+        from jaxatari.games.jax_pong import JaxPong, PongRenderer
+        from jaxatari.wrappers import LogWrapper
+        env = JaxPong()
+        renderer = PongRenderer()
+        env = AtariWrapper(env, sticky_actions=False)
+        env = FlattenObservationWrapper(env)
+        env = LogWrapper(env)
+
     elif "Craftax" in config.get("ENV_NAME", None):
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy

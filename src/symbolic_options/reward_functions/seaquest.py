@@ -31,9 +31,10 @@ def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
 def upward_reward(prev_state: SeaquestState, state: SeaquestState):
     # return 1 if player is moving up 
     #TODO: was 0.01 before
-    reward = jnp.where(state.player_y == prev_state.player_y-1, 0.5, 0)
-    # dying punishment
-    reward = jnp.where(state.lives < prev_state.lives, -1, reward)
+    # reward = jnp.where(state.player_y == prev_state.player_y-1, 0.5, 0)
+    # # dying punishment
+    # reward = jnp.where(state.lives < prev_state.lives, -1, reward)
+    reward = jnp.where(state.oxygen > prev_state.oxygen, 0.1, 0)
     return reward
 
 @jax.jit
