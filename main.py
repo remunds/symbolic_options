@@ -69,9 +69,10 @@ def outer_make_train(config):
     elif "Craftax" in config.get("ENV_NAME", None):
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper
+        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper
         # reward_funcs_craftax = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
         reward_funcs = [survival_reward, combat_reward, crafting_reward, resource_collection_reward, explore]
+        # reward_funcs = []
         # renderer = CraftaxRenderer()
         renderer = CraftaxClassicRenderer()
         basic_env = make_craftax_env_from_name(

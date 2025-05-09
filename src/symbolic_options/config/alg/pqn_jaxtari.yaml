@@ -1,6 +1,6 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_atariwrapper"
+ALG_NAME: "pqn_hier_llm_atariwrapper"
 TOTAL_TIMESTEPS: 1e9 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
 TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #512 # parallel environments
@@ -26,7 +26,7 @@ LR_LINEAR_DECAY: False #True
 GAMMA: 0.99
 LAMBDA: 0.65
 
-HIERARCHICAL: False # if False: use PQN rather than hierarchical PQN
+HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
 META_POLICY: "llm" # llm, learned, conditional, combined
 META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)

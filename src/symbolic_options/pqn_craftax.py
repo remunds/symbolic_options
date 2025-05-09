@@ -74,6 +74,7 @@ class CustomTrainState(TrainState):
 
 
 def make_train(config, env, test_env, env_params, meta_policy, renderer):
+    print(env_params)
 
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -335,12 +336,13 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 "td_loss": loss.mean(),
                 "qvals": qvals.mean(),
             }
-            done_infos = jax.tree_util.tree_map(
-                lambda x: (x * infos["returned_episode"]).sum()
-                / infos["returned_episode"].sum(),
-                infos,
-            )
-            metrics.update(done_infos)
+            # done_infos = jax.tree_util.tree_map(
+            #     lambda x: (x * infos["returned_episode"]).sum()
+            #     / infos["returned_episode"].sum(),
+            #     infos,
+            # )
+            # metrics.update(done_infos)
+            metrics.update({k: v.mean() for k, v in infos.items()})
 
             if config.get("TEST_DURING_TRAINING", False):
                 rng, _rng = jax.random.split(rng)
@@ -404,10 +406,14 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 new_action = jax.vmap(eps_greedy_exploration)(
                     jax.random.split(_rng, config["TEST_NUM_ENVS"]), q_vals, eps
                 )
+                jax.debug.print("action: {}", new_action)
                 new_obs, new_env_state, reward, new_done, info = test_env.step(
                     _rng, env_state, new_action, env_params
                 )
+                jax.debug.print("cows: {}", new_env_state.env_state.cows.mask.sum())
                 env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
+                jax.debug.print("cows vid: {}", env_state_vid.env_state.cows.mask.sum())
+                rewards = info.pop("all_rewards", 0)
                 return (new_env_state, new_obs, rng), (info, env_state_vid, new_done[0])
 
             rng, _rng = jax.random.split(rng)
@@ -427,9 +433,19 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 )
 
             # return mean of done infos
+            # done_infos = jax.tree_util.tree_map(
+            #     lambda x: (x * infos["returned_episode"]).sum()
+            #     / infos["returned_episode"].sum(),
+            #     infos,
+            # )
             done_infos = jax.tree_util.tree_map(
-                lambda x: (x * infos["returned_episode"]).sum()
-                / infos["returned_episode"].sum(),
+                lambda x: jnp.nanmean(
+                    jnp.where(
+                        infos["returned_episode"],
+                        x,
+                        jnp.nan,
+                    )
+                ),
                 infos,
             )
             return done_infos

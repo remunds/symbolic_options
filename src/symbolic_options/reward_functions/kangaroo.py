@@ -3,130 +3,88 @@ import jax.numpy as jnp
 from jaxatari.wrappers import MultiRewardLogEnvState, AtariState
 from jaxatari.games.jax_kangaroo import KangarooState
 
-# @jax.jit
-# def navigate_reward(prev_state: KangarooState, state: KangarooState):
-#     #compute distance to child
-#     child_dist = jnp.sqrt((state.player.x - state.level.child_position[..., 0])**2 + (state.player.y - state.level.child_position[..., 1])**2)
-#     child_dist_prev = jnp.sqrt((prev_state.player.x - prev_state.level.child_position[..., 0])**2 + (prev_state.player.y - prev_state.level.child_position[..., 1])**2)
-
-#     reward = jnp.where(child_dist < child_dist_prev, 0.1, 0) # reward for getting closer to child
-#     reward = jnp.where(child_dist > child_dist_prev, -0.01, reward) # punish for getting further away \
-#     # without punishment, the agent would just oscillate 
-#     # but because it's okay to move away a bit, the punishment is smaller
-
-#     #TODO: could also add reward for getting closer to the closest ladder
-
-
-#     # dying punishment
-#     reward = jnp.where(state.lives < prev_state.lives, -1, reward)
-#     return reward
-
 @jax.jit
 def navigate_reward(prev_state: KangarooState, state: KangarooState):
-    # navigate to and up ladder
-    dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
-    dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
-    dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
+    # encourage going up
+    # the smaller y, the higher is the player
+    # jnp.where((state.player.y - prev_state.player.y) < 0, 1, 0)
+    # -1 - -2  = 1(moved down, negative reward)
+    # -1 - 0 = -1 (moved up, positive reward)
+    # -5 - -4 = -1 (moved up, positive reward)
+    # -3 - -4 = 1 (moved down, negative reward)
+    return -(state.player.y - prev_state.player.y)
 
-    # find ladder on current level (closest y)
-    closest_idx = jnp.argmin(dy) 
-    x_diff = dx[closest_idx] - dx_prev[closest_idx]
-    ladder_reward = -(x_diff) # reward for getting closer to ladder
+# @jax.jit
+# def navigate_reward(prev_state: KangarooState, state: KangarooState):
+#     # navigate to and up ladder
+#     dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
+#     dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
+#     dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
 
-    # reward going up (e.g. ladder) TODO: just added the 3 here -> worth it?
-    ladder_up_reward = -3*(state.player.y - prev_state.player.y)
+#     # find ladder on current level (closest y)
+#     closest_idx = jnp.argmin(dy) 
+#     x_diff = dx[closest_idx] - dx_prev[closest_idx]
+#     ladder_reward = -(x_diff) # reward for getting closer to ladder
 
-    dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
+#     # reward going up (e.g. ladder) TODO: just added the 3 here -> worth it?
+#     ladder_up_reward = -3*(state.player.y - prev_state.player.y)
 
-    return ladder_reward + ladder_up_reward + dying_reward
+#     dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
+
+#     return ladder_reward + ladder_up_reward + dying_reward
 
 @jax.jit
 def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):
-    # threats management
-    # reward for killing enemies
-    # monkey_state of zero: non-existent
     monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) < jnp.count_nonzero(prev_state.level.monkey_states, axis=-1), 1, 0)
-
-    # avoid falling/thrown objects
-    # coco_positions_x = jnp.concatenate((state.level.falling_coco_position[:1], state.level.morris_coco_positions[:, 0]), axis=-1) #(128, 5)
-    # coco_positions_y = jnp.concatenate((state.level.falling_coco_position[1:], state.level.morris_coco_positions[:, 1]), axis=-1) #(128, 5)
-    # dx = coco_positions_x - state.player.x
-    # dy = coco_positions_y - state.player.y
-    # coco_dist_sq = dx ** 2 + dy ** 2
-    # closest_idx = jnp.argmin(coco_dist_sq)
-    # # reward = distance to closest coco
-    # coco_reward = jnp.sqrt(coco_dist_sq[closest_idx]) #(128,)
-    # coco_reward /= 10000
-
     # punish dying
     dying_reward = jnp.where(state.lives < prev_state.lives, -1, 0)
     return monkey_reward + dying_reward
 
-# @jax.jit
-# def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
-#     # collecting a fruit: if fewer active than before (they deactivate after collecting)
-#     fruit_reward = jnp.where(jnp.count_nonzero(state.level.fruit_actives, axis=-1) < jnp.count_nonzero(prev_state.level.fruit_actives, axis=-1), 1, 0)
-
-#     # reward for ringing bell (player.x and y are the same as bell.x and y; and bell_timer == 0)
-#     bell_condition = jnp.logical_and(state.player.x == state.level.bell_position[..., 0], state.player.y == state.level.bell_position[..., 1])
-#     bell_condition = jnp.logical_and(bell_condition, state.level.bell_timer == 0)
-#     bell_reward = jnp.where(bell_condition, 1, 0) 
-
-#     # punish dying
-#     dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
-#     # combine rewards
-#     reward = fruit_reward + bell_reward + dying_reward
-#     return reward
-
 @jax.jit
 def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
-    # compute distance from fruits to player
-    dx = jnp.abs(state.level.fruit_positions[..., 0] - state.player.x)
-    dy = jnp.abs(state.level.fruit_positions[..., 1] - state.player.y) #(128, 3)
-    dx_prev = jnp.abs(state.level.fruit_positions[..., 0] - prev_state.player.x) #(128, 3)
-    dy_prev = jnp.abs(state.level.fruit_positions[..., 1] - prev_state.player.y) #(128, 3)
-    # set distance of inactive fruits to inf
-    dx = jnp.where(state.level.fruit_actives != 0, dx, jnp.inf)
-    dy = jnp.where(state.level.fruit_actives != 0, dy, jnp.inf)
+    # give reward if previously active fruit is inactive
+    new_inactive = jnp.where(((state.level.fruit_actives.astype(int) - prev_state.level.fruit_actives.astype(int)) == -1).any(axis=-1), 1, 0)
+    return new_inactive
 
-    # find closest fruit (closest y)
-    closest_idx = jnp.argmin(dy)
-    x_diff = dx[closest_idx] - dx_prev[closest_idx]
-    y_diff = dy[closest_idx] - dy_prev[closest_idx]
-    # reward for getting closer to fruit
-    fruit_reward = -((x_diff + y_diff) / 2) # reward for getting closer to fruit
-    # if closest fruit is inactive, set reward to 0 (only if all fruits are inactive)
-    fruit_reward = jnp.where(state.level.fruit_actives[closest_idx] != 0, fruit_reward, 0)
+# @jax.jit
+# def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
+#     # compute distance from fruits to player
+#     dx = jnp.abs(state.level.fruit_positions[..., 0] - state.player.x)
+#     dy = jnp.abs(state.level.fruit_positions[..., 1] - state.player.y) #(128, 3)
+#     dx_prev = jnp.abs(state.level.fruit_positions[..., 0] - prev_state.player.x) #(128, 3)
+#     dy_prev = jnp.abs(state.level.fruit_positions[..., 1] - prev_state.player.y) #(128, 3)
+#     # set distance of inactive fruits to inf
+#     dx = jnp.where(state.level.fruit_actives != 0, dx, jnp.inf)
+#     dy = jnp.where(state.level.fruit_actives != 0, dy, jnp.inf)
 
-    # reward for ringing bell (player.x and y are the same as bell.x and y; and bell_timer == 0)
-    # bell_condition = jnp.logical_and(state.player.x == state.level.bell_position[..., 0], state.player.y == state.level.bell_position[..., 1])
-    # bell_condition = jnp.logical_and(bell_condition, state.level.bell_timer == 0)
-    # bell_reward = jnp.where(bell_condition, 10, 0) 
-    # reward = -distance to bell
-    dx = jnp.abs(state.level.bell_position[..., 0] - state.player.x) #(128, 1)
-    dy = jnp.abs(state.level.bell_position[..., 1] - state.player.y)
-    # bell_dist_sq = dx ** 2 + dy ** 2
-    # bell_dist_sq = jnp.where(state.level.bell_timer == 0, bell_dist_sq, jnp.inf)
-    # bell_reward = -jnp.sqrt(bell_dist_sq) #(128,) 
-    # bell_reward /= 10000
-    # # positive reward
-    # bell_reward = 0.01 + bell_reward
-    dx_prev = jnp.abs(state.level.bell_position[..., 0] - prev_state.player.x) #(128, 1)
-    dy_prev = jnp.abs(state.level.bell_position[..., 1] - prev_state.player.y)
+#     # find closest fruit (closest y)
+#     closest_idx = jnp.argmin(dy)
+#     x_diff = dx[closest_idx] - dx_prev[closest_idx]
+#     y_diff = dy[closest_idx] - dy_prev[closest_idx]
+#     # reward for getting closer to fruit
+#     fruit_reward = -((x_diff + y_diff) / 2) # reward for getting closer to fruit
+#     # if closest fruit is inactive, set reward to 0 (only if all fruits are inactive)
+#     fruit_reward = jnp.where(state.level.fruit_actives[closest_idx] != 0, fruit_reward, 0)
 
-    # set distance of inactive bells to inf
-    x_diff = dx - dx_prev
-    y_diff = dy - dy_prev
-    bell_reward = -((x_diff + y_diff) / 8) # reward for getting closer to bell
-    # bell reward should be smaller than fruit reward
-    # if closest bell is inactive, set reward to 0 
-    bell_reward = jnp.where(state.level.bell_timer == 0, bell_reward, 0)
+#     # reward for ringing bell (player.x and y are the same as bell.x and y; and bell_timer == 0)
+#     dx = jnp.abs(state.level.bell_position[..., 0] - state.player.x) #(128, 1)
+#     dy = jnp.abs(state.level.bell_position[..., 1] - state.player.y)
+#     dx_prev = jnp.abs(state.level.bell_position[..., 0] - prev_state.player.x) #(128, 1)
+#     dy_prev = jnp.abs(state.level.bell_position[..., 1] - prev_state.player.y)
 
-    # punish dying
-    dying_reward = jnp.where(state.lives < prev_state.lives, -30, 0)
-    # combine rewards
-    reward = fruit_reward + bell_reward + dying_reward
-    return reward
+#     # set distance of inactive bells to inf
+#     x_diff = dx - dx_prev
+#     y_diff = dy - dy_prev
+#     bell_reward = -((x_diff + y_diff) / 8) # reward for getting closer to bell
+#     # bell reward should be smaller than fruit reward
+#     # if closest bell is inactive, set reward to 0 
+#     bell_reward = jnp.where(state.level.bell_timer == 0, bell_reward, 0)
+
+#     # # punish dying
+#     # dying_reward = jnp.where(state.lives < prev_state.lives, -30, 0)
+#     # combine rewards
+#     reward = fruit_reward + bell_reward #+ dying_reward
+#     return reward
 
 # @jax.jit
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooState):
