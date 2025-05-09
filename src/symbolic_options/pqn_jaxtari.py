@@ -67,7 +67,7 @@ def rtpt_callback():
     global rtpt
     rtpt.step()
 
-def make_train(config, env, meta_policy, renderer):
+def make_train(config, env, test_env, meta_policy, renderer):
     global rtpt
 
     config["NUM_UPDATES"] = (
@@ -98,6 +98,13 @@ def make_train(config, env, meta_policy, renderer):
     )
     vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
         env.step#, in_axes=(0, 0, None)
+    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+
+    test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env.reset)(
+        jax.random.split(rng, n_envs)#, env_params
+    )
+    test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+        test_env.step#, in_axes=(0, 0, None)
     )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
 
     # epsilon-greedy exploration
@@ -354,6 +361,8 @@ def make_train(config, env, meta_policy, renderer):
 
                 jax.debug.callback(callback, metrics, original_rng)
 
+            # update rtpt
+            jax.debug.callback(rtpt_callback)
             runner_state = (train_state, tuple(expl_state), test_metrics, rng)
 
             return runner_state, metrics
@@ -378,7 +387,7 @@ def make_train(config, env, meta_policy, renderer):
                 action = jax.vmap(eps_greedy_exploration)(
                     jax.random.split(_rng, config["TEST_NUM_ENVS"]), q_vals, eps
                 )
-                new_obs, new_env_state, reward, done, info = vmap_step(
+                new_obs, new_env_state, reward, done, info = test_vmap_step(
                     config["TEST_NUM_ENVS"]
                 )(_rng, env_state, action)
                 info.pop("all_rewards")
@@ -386,7 +395,7 @@ def make_train(config, env, meta_policy, renderer):
                 return (new_env_state, new_obs, rng), (info, env_state_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
-            init_obs, env_state = vmap_reset(config["TEST_NUM_ENVS"])(_rng)
+            init_obs, env_state = test_vmap_reset(config["TEST_NUM_ENVS"])(_rng)
 
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, _rng), None, config["TEST_NUM_STEPS"]

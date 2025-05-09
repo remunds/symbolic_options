@@ -124,8 +124,8 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
     cow_distances = jnp.linalg.norm(cow_distances, axis=-1)  # [N, M]
     cow_distances = jnp.where(state.cows.mask, cow_distances, jnp.inf)  # [N, M, 2]
 
-    combat_mask = jnp.logical_or(jnp.logical_or(jnp.any(zombie_distances <= 5, axis=-1),
-                jnp.any(skeleton_distances <= 10, axis=-1)),
+    combat_mask = jnp.logical_or(jnp.logical_or(jnp.any(zombie_distances <= 3, axis=-1),
+                jnp.any(skeleton_distances <= 4, axis=-1)),
                 jnp.any(cow_distances <= 2, axis=-1))# [N, M] -> [N]
 
     # 3. If crafting possible, do it

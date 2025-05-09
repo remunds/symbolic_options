@@ -35,6 +35,7 @@ def outer_make_train(config):
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
         from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
+        from jaxatari.games.mods.seaquest_mods import DisableEnemiesWrapper
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
@@ -42,20 +43,39 @@ def outer_make_train(config):
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
-        env = JaxSeaquest(reward_funcs=reward_funcs)
+
+        def create_env(no_enemies: bool = False):
+            env = JaxSeaquest(reward_funcs=reward_funcs)
+            if no_enemies:
+                env = DisableEnemiesWrapper(env)
+            env = AtariWrapper(env, sticky_actions=False)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(False)
+        test_env = create_env(False)
+        if config.get("TEST_MODIFS", False):
+            test_env = create_env(True)
         renderer = SeaquestRenderer()
-        env = AtariWrapper(env, sticky_actions=False)
-        env = FlattenObservationWrapper(env)
-        env = MultiRewardLogWrapper(env)
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
+        from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
-        env = JaxKangaroo(reward_funcs=reward_funcs)
-        renderer = KangarooRenderer() 
-        env = AtariWrapper(env, sticky_actions=False)
-        env = FlattenObservationWrapper(env)
-        env = MultiRewardLogWrapper(env)
+
+        def create_env(no_enemies: bool = False):
+            env = JaxKangaroo(reward_funcs=reward_funcs)
+            if no_enemies:
+                env = DisableThreadsWrapper(env)
+            env = AtariWrapper(env, sticky_actions=False)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(False)
+        test_env = create_env(False)
+        if config.get("TEST_MODIFS", False):
+            test_env = create_env(True)
+        renderer = KangarooRenderer()
     # only quick PQN test:
     elif config.get("ENV_NAME", None) == "Pong":
         from jaxatari.games.jax_pong import JaxPong, PongRenderer
@@ -128,9 +148,9 @@ def outer_make_train(config):
             return make_train_pqn_craftax(config, env, test_env, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
-            return make_train_hier_jaxatari(config, env, meta_policy, llm_meta_policy, renderer)
+            return make_train_hier_jaxatari(config, env, test_env, meta_policy, llm_meta_policy, renderer)
         else:
-            return make_train_pqn_jaxatari(config, env, meta_policy, renderer)
+            return make_train_pqn_jaxatari(config, env, test_env, meta_policy, renderer)
 
 def single_run(config):#
     config = {**config, **config["alg"]}

@@ -72,7 +72,7 @@ def rtpt_callback():
     global rtpt
     rtpt.step()
 
-def make_train(config, env, meta_policy, meta_policy_llm, renderer):
+def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
     global curr_renderer
     global rtpt
     curr_renderer = renderer
@@ -102,6 +102,13 @@ def make_train(config, env, meta_policy, meta_policy_llm, renderer):
     )
     vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
         env.step#, in_axes=(0, 0, None)
+    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+
+    test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env.reset)(
+        jax.random.split(rng, n_envs)#, env_params
+    )
+    test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+        test_env.step#, in_axes=(0, 0, None)
     )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
 
     # epsilon-greedy exploration
@@ -525,7 +532,7 @@ def make_train(config, env, meta_policy, meta_policy_llm, renderer):
                     lambda _: test_metrics,
                     operand=None,
                 )
-                metrics.update({f"test_{k}": v for k, v in test_metrics.items()})
+                metrics.update({f"test/{k}": v for k, v in test_metrics.items()})
 
             # report on wandb if required
             if config["WANDB_MODE"] != "disabled":
@@ -650,7 +657,7 @@ def make_train(config, env, meta_policy, meta_policy_llm, renderer):
                 action = all_actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
 
                 # use the selected actions to step the environment
-                new_obs, new_env_state, reward, done, info = vmap_step(
+                new_obs, new_env_state, reward, done, info = test_vmap_step(
                     config["TEST_NUM_ENVS"]
                 )(_rng, env_state, action)
                 # only select the first value of all arrays of env_state for video generation
@@ -685,7 +692,7 @@ def make_train(config, env, meta_policy, meta_policy_llm, renderer):
                 return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
-            init_obs, env_state = vmap_reset(config["TEST_NUM_ENVS"])(_rng)
+            init_obs, env_state = test_vmap_reset(config["TEST_NUM_ENVS"])(_rng)
 
             init_rewards = jnp.zeros((config["TEST_NUM_ENVS"], num_agents))
             _, output = jax.lax.scan(
