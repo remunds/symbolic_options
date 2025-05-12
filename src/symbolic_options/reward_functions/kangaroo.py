@@ -5,14 +5,28 @@ from jaxatari.games.jax_kangaroo import KangarooState
 
 @jax.jit
 def navigate_reward(prev_state: KangarooState, state: KangarooState):
-    # encourage going up
-    # the smaller y, the higher is the player
-    # jnp.where((state.player.y - prev_state.player.y) < 0, 1, 0)
-    # -1 - -2  = 1(moved down, negative reward)
-    # -1 - 0 = -1 (moved up, positive reward)
-    # -5 - -4 = -1 (moved up, positive reward)
-    # -3 - -4 = 1 (moved down, negative reward)
-    return -(state.player.y - prev_state.player.y)
+    # navigate to and up ladder
+    dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
+    dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
+    dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
+
+    # find ladder on current level (closest y)
+    closest_idx = jnp.argmin(dy) 
+    # x_diff = dx[closest_idx] - dx_prev[closest_idx]
+    ladder_reward = jnp.where(dx[closest_idx] < dx_prev[closest_idx], 1, 0) # reward for getting closer to ladder 
+    ladder_reward = jnp.where(dx[closest_idx] > dx_prev[closest_idx], -1, ladder_reward) # punish for getting further away from ladder 
+
+    # reward going up (e.g. ladder) 
+    # TODO: before:
+    ladder_up_reward = jnp.where(state.player.y < prev_state.player.y, 1, 0) # reward for going up 
+    ladder_up_reward = jnp.where(state.player.y > prev_state.player.y, -1, ladder_up_reward) # reward for going up 
+    #dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
+
+    reward = ladder_reward + ladder_up_reward #+ dying_reward 
+    print("navigate_reward: ", reward.shape)
+
+    # return ladder_reward + ladder_up_reward #+ dying_reward
+    return reward
 
 # @jax.jit
 # def navigate_reward(prev_state: KangarooState, state: KangarooState):
@@ -26,25 +40,38 @@ def navigate_reward(prev_state: KangarooState, state: KangarooState):
 #     x_diff = dx[closest_idx] - dx_prev[closest_idx]
 #     ladder_reward = -(x_diff) # reward for getting closer to ladder
 
-#     # reward going up (e.g. ladder) TODO: just added the 3 here -> worth it?
+#     # reward going up (e.g. ladder) 
+#     # TODO: before:
 #     ladder_up_reward = -3*(state.player.y - prev_state.player.y)
-
 #     dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
 
+
 #     return ladder_reward + ladder_up_reward + dying_reward
+
+# @jax.jit
+# def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):
+#     new_crash = jnp.logical_and(
+#         state.player.is_crashing,
+#         jnp.logical_not(prev_state.player.is_crashing),
+#     )
+#     return -1 * new_crash.astype(jnp.float32)
 
 @jax.jit
 def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):
     monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) < jnp.count_nonzero(prev_state.level.monkey_states, axis=-1), 1, 0)
     # punish dying
     dying_reward = jnp.where(state.lives < prev_state.lives, -1, 0)
-    return monkey_reward + dying_reward
+    reward = monkey_reward + dying_reward 
+    print("handle_enemies_reward: ", reward.shape)
+    return reward 
 
 @jax.jit
 def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
-    # give reward if previously active fruit is inactive
-    new_inactive = jnp.where(((state.level.fruit_actives.astype(int) - prev_state.level.fruit_actives.astype(int)) == -1).any(axis=-1), 1, 0)
-    return new_inactive
+    prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
+    new_active = jnp.sum(state.level.fruit_actives, axis=-1)
+    reward = jnp.where(new_active < prev_active, 1, 0)
+    print("collect_fruits_reward: ", reward.shape)
+    return reward 
 
 # @jax.jit
 # def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
@@ -84,6 +111,7 @@ def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
 #     # dying_reward = jnp.where(state.lives < prev_state.lives, -30, 0)
 #     # combine rewards
 #     reward = fruit_reward + bell_reward #+ dying_reward
+
 #     return reward
 
 # @jax.jit

@@ -6,6 +6,7 @@ from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState
 
 @jax.jit
 def survival_reward(prev_state: CraftaxState, state: CraftaxState):
+    # this works great
     # Reward for survival management (player needs)
     health_reward = state.player_health - prev_state.player_health
     food_reward = state.player_food - prev_state.player_food
@@ -15,7 +16,7 @@ def survival_reward(prev_state: CraftaxState, state: CraftaxState):
 
 @jax.jit
 def combat_reward(prev_state: CraftaxState, state: CraftaxState):
-    # NOTE: this might require additional incentive like rewarding hitting/using bow/...
+    # this works great
     # Reward for combat engagement (killing mobs)
     # killed_a_mob = jnp.where(prev_state.zombies.mask.sum() > state.zombies.mask.sum(), 1, 0)
     reduced_zombie_health = jnp.where(prev_state.zombies.health.sum() > state.zombies.health.sum(), 5, 0)
@@ -30,16 +31,17 @@ def combat_reward(prev_state: CraftaxState, state: CraftaxState):
 @jax.jit
 def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
     # Reward for resource collection (wood, stone, coal, iron, diamond)
+    # Limit the rewards based on the already collected resources 
     wood_reward = state.inventory.wood - prev_state.inventory.wood
-    wood_reward = jnp.where(state.inventory.wood < 20, wood_reward, 0)
+    wood_reward = jnp.where(state.inventory.wood < 5, wood_reward, 0)
     stone_reward = state.inventory.stone - prev_state.inventory.stone
-    stone_reward = jnp.where(state.inventory.stone < 10, stone_reward, 0)
+    stone_reward = jnp.where(state.inventory.stone < 5, stone_reward, 0)
     coal_reward = state.inventory.coal - prev_state.inventory.coal
-    coal_reward = jnp.where(state.inventory.coal < 10, coal_reward, 0)
+    coal_reward = jnp.where(state.inventory.coal < 5, coal_reward, 0)
     iron_reward = state.inventory.iron - prev_state.inventory.iron
-    iron_reward = jnp.where(state.inventory.iron < 10, iron_reward, 0)
+    iron_reward = jnp.where(state.inventory.iron < 5, iron_reward, 0)
     diamond_reward = state.inventory.diamond - prev_state.inventory.diamond
-    resource_reward = wood_reward + 2 * stone_reward + 2 * coal_reward + 3 * iron_reward + 5 * diamond_reward
+    resource_reward = wood_reward + 2 * stone_reward + 2 * coal_reward + 10 * iron_reward + 20 * diamond_reward
     return resource_reward
 
 def should_craft_pickaxe(inv: Inventory):
@@ -79,10 +81,12 @@ def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
 
 @jax.jit
 def explore(prev_state: CraftaxState, state: CraftaxState):
-    # Reward movement
-    explore_reward = jnp.where(state.player_position[0] != prev_state.player_position[0], 1, 0)
-    explore_reward = jnp.where(state.player_position[1] != prev_state.player_position[1], explore_reward, 0)
-    return explore_reward 
+    # Reward reaching unexplored areas
+    # Note: this uses added exploration map
+    new_explored = state.exploration_map.astype(int) - prev_state.exploration_map.astype(int)
+    new_explored = jnp.where(new_explored > 0, 1, 0)
+    reward = jnp.sum(new_explored, axis=(-2, -1))  # Sum over the map dimensions
+    return reward
 
 
 @partial(jax.jit, static_argnums=(0))

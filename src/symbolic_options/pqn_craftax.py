@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from typing import Any
+from rtpt import RTPT  
 
 import chex
 import optax
@@ -72,9 +73,13 @@ class CustomTrainState(TrainState):
     n_updates: int = 0
     grad_steps: int = 0
 
+rtpt = None
+def rtpt_callback():
+    global rtpt
+    rtpt.step()
 
 def make_train(config, env, test_env, env_params, meta_policy, renderer):
-    print(env_params)
+    global rtpt
 
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -87,6 +92,9 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
     assert (config["NUM_STEPS"] * config["NUM_ENVS"]) % config[
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
+
+    rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
+    rtpt.start()
 
      # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):
@@ -381,6 +389,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                         wandb.log(metrics, step=metrics["update_steps"])
 
                 jax.debug.callback(callback, metrics, original_rng)
+            jax.debug.callback(rtpt_callback)
 
             runner_state = (train_state, tuple(expl_state), test_metrics, rng)
 
@@ -406,13 +415,10 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 new_action = jax.vmap(eps_greedy_exploration)(
                     jax.random.split(_rng, config["TEST_NUM_ENVS"]), q_vals, eps
                 )
-                jax.debug.print("action: {}", new_action)
                 new_obs, new_env_state, reward, new_done, info = test_env.step(
                     _rng, env_state, new_action, env_params
                 )
-                jax.debug.print("cows: {}", new_env_state.env_state.cows.mask.sum())
                 env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
-                jax.debug.print("cows vid: {}", env_state_vid.env_state.cows.mask.sum())
                 rewards = info.pop("all_rewards", 0)
                 return (new_env_state, new_obs, rng), (info, env_state_vid, new_done[0])
 

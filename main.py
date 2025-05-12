@@ -48,7 +48,7 @@ def outer_make_train(config):
             env = JaxSeaquest(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
-            env = AtariWrapper(env, sticky_actions=False)
+            env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
@@ -67,7 +67,7 @@ def outer_make_train(config):
             env = JaxKangaroo(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableThreadsWrapper(env)
-            env = AtariWrapper(env, sticky_actions=False)
+            env = AtariWrapper(env, sticky_actions=False, episodic_life=True)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
