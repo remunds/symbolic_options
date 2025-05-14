@@ -44,18 +44,24 @@ def outer_make_train(config):
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
 
-        def create_env(no_enemies: bool = False):
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, no_enemies: bool = False):
             env = JaxSeaquest(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
-            env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            if train:
+                print("Train: sticky, episodic: ", sticky_actions, episodic_life)
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
-        env = create_env(False)
-        test_env = create_env(False)
+        env = create_env(True, False)
+        test_env = create_env(False, False)
         if config.get("TEST_MODIFS", False):
-            test_env = create_env(True)
+            test_env = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
@@ -63,18 +69,23 @@ def outer_make_train(config):
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
 
-        def create_env(no_enemies: bool = False):
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train=False, no_enemies: bool = False):
             env = JaxKangaroo(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableThreadsWrapper(env)
-            env = AtariWrapper(env, sticky_actions=False, episodic_life=True)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
-        env = create_env(False)
-        test_env = create_env(False)
+        env = create_env(True, False)
+        test_env = create_env(False, False)
         if config.get("TEST_MODIFS", False):
-            test_env = create_env(True)
+            test_env = create_env(False, True)
         renderer = KangarooRenderer()
     # only quick PQN test:
     elif config.get("ENV_NAME", None) == "Pong":

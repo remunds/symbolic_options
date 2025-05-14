@@ -1,6 +1,6 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_smallNN"
+ALG_NAME: "pqn_hier_llm_higher_eps_finish_and_fix"
 TOTAL_TIMESTEPS: 1e9
 TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #parallel environments
@@ -8,20 +8,21 @@ NUM_STEPS: 128 # steps per environment in each update
 #NUM_STEPS: 1 # original setting
 # EPS_START: 0.1
 EPS_START: 1.0
-EPS_FINISH: 0.005
+# EPS_FINISH: 0.005
+EPS_FINISH: 0.1 #TODO: This is a test
 # EPS_DECAY: 0.2 # ratio of total updates
-EPS_DECAY: 0.1 # ratio of total updates
+# EPS_DECAY: 0.1 # ratio of total updates
+EPS_DECAY: 0.3 #TODO: testing 
 # META_EPS_START: 0.1 # this will be the value until training is started
 META_EPS_START: 1.0 # this will be the value until training is started
 META_EPS_FINISH: 0.005
 META_EPS_DECAY: 0.1 # ratio of total updates
 NUM_EPOCHS: 4 # minibatches per epoch
-# NUM_EPOCHS: 1 # minibatches per epoch
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 # HIDDEN_SIZE: 1024 #TODO: test if we can use smaller one
 # NUM_LAYERS: 4
-HIDDEN_SIZE: 64 #TODO: test if we can use smaller one
+HIDDEN_SIZE: 64
 NUM_LAYERS: 3
 LR: 1.0e-4
 MAX_GRAD_NORM: 1.0
@@ -30,8 +31,8 @@ GAMMA: 0.99
 Q_LAMBDA: False
 LAMBDA: 0 
 
-HIERARCHICAL: False # False: use PQN rather than hierarchical PQN
-META_POLICY: "LLM" # llm, learned, conditional, combined
+HIERARCHICAL: True # False: use PQN rather than hierarchical PQN
+META_POLICY: "llm" # llm, learned, conditional, combined
 META_GREEDY: True
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
 LLM_PRETRAIN: False #pretrain options with llm meta policy

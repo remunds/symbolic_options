@@ -167,6 +167,8 @@ def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
         # INIT NETWORK AND OPTIMIZER
         network = QNetwork(
             action_dim=config["NUM_ACTIONS"],
+            hidden_size=config.get("HIDDEN_SIZE", 64),
+            num_layers=config.get("NUM_LAYERS", 3),
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
@@ -315,7 +317,6 @@ def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
                 # add reward to end -> (128,4)
                 rewards = jnp.concatenate((rewards, reward[:, None]), axis=1)
 
-
                 transition = Transition(
                     obs=last_obs,
                     action=new_action,
@@ -323,7 +324,8 @@ def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
                     rewards=config.get("REW_SCALE", 1)*rewards,
                     done=new_done,
                     next_obs=new_obs,
-                    q_val=q_vals,
+                    # q_val=q_vals,
+                    q_val=all_q_vals,
                     # meta_q_val=active_agent_q_vals
                     meta_q_val=combined_q
                 )
@@ -356,7 +358,9 @@ def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
                     transitions.next_obs[-1],
                     train=False,
                 )
-                last_q = jnp.max(last_q, axis=-1)
+                #TODO: change back!
+                # last_q = jnp.max(last_q, axis=-1)
+                last_q = last_q[..., state_idx] # select the q_val of the active agent
 
                 def _get_target(lambda_returns_and_next_q, transition):
                     lambda_returns, next_q = lambda_returns_and_next_q
@@ -373,13 +377,11 @@ def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
                     next_q = jax.lax.cond(
                         state_idx == num_agents,
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
-                        lambda _: jnp.max(transition.q_val, axis=-1),
+                        #TODO: change back!
+                        # lambda _: jnp.max(transition.q_val, axis=-1),
+                        lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
                         operand=None,
                     )
-                    # if state_idx == -1:
-                    #     next_q = jnp.max(transition.meta_q_val, axis=-1)
-                    # else:
-                    #     next_q = jnp.max(transition.q_val, axis=-1)
                     return (lambda_returns, next_q), lambda_returns
 
                 last_q = last_q * (1 - transitions.done[-1])
@@ -482,8 +484,8 @@ def make_train(config, env, test_env, meta_policy, meta_policy_llm, renderer):
                     "update_steps": train_state.n_updates,
                     "env_frame": train_state.timesteps * 4, #skipped 4 frames 
                     "grad_steps": train_state.grad_steps,
-                    "td_loss": loss.mean(),
-                    "qvals": qvals.mean(),
+                    "td_loss": loss[-1].mean(),
+                    "qvals": qvals[-1].mean(),
                     "eps": eps, 
                 }
                 return metrics, train_state

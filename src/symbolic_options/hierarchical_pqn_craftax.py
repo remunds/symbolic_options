@@ -289,9 +289,6 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                 new_obs, new_env_state, reward, new_done, info = env.step(
                     rng_s, env_state, new_action, env_params
                 )
-                # jax.debug.print("cows: {}", new_env_state.env_state.cows.mask.sum())
-                # env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
-                # jax.debug.print("cows vid: {}", env_state_vid.env_state.cows.mask.sum())
 
                 # add reward to end -> (128,N_rews+1)
                 rewards = info.pop("all_rewards") #(N_envs, N_rews)
@@ -304,7 +301,8 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                     rewards=config.get("REW_SCALE", 1)*rewards,
                     done=new_done,
                     next_obs=new_obs,
-                    q_val=q_vals,
+                    # q_val=q_vals,
+                    q_val=all_q_vals,
                     # meta_q_val=active_agent_q_vals
                     meta_q_val=combined_q
                 )
@@ -337,7 +335,9 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                     transitions.next_obs[-1],
                     train=False,
                 )
-                last_q = jnp.max(last_q, axis=-1)
+                #TODO: think this is a fix
+                # last_q = jnp.max(last_q, axis=-1)
+                last_q = last_q[..., state_idx]  # select the q_val of the active agent
 
                 def _get_target(lambda_returns_and_next_q, transition):
                     lambda_returns, next_q = lambda_returns_and_next_q
@@ -354,7 +354,9 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                     next_q = jax.lax.cond(
                         state_idx == num_agents,
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
-                        lambda _: jnp.max(transition.q_val, axis=-1),
+                        # lambda _: jnp.max(transition.q_val, axis=-1),
+                        #TODO: same fix as before
+                        lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
                         operand=None,
                     )
                     return (lambda_returns, next_q), lambda_returns
