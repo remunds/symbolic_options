@@ -59,7 +59,7 @@ def outer_make_train(config):
             return env
         env = create_env(True, False)
         test_env = create_env(False, False)
-        test_env = create_env(False, True)
+        test_env_modif = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy

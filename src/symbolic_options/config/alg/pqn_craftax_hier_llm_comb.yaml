@@ -1,7 +1,7 @@
 # this is adapted from Atari configuration
 NUM_SEEDS: 1 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_llm_higher_eps_finish_and_fix"
+ALG_NAME: "pqn_hier_llm_comb"
 TOTAL_TIMESTEPS: 1e9
 TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #parallel environments
@@ -33,12 +33,12 @@ Q_LAMBDA: False
 LAMBDA: 0 
 
 HIERARCHICAL: True # False: use PQN rather than hierarchical PQN
-META_POLICY: "llm" # llm, learned, conditional, combined
-META_GREEDY: True
+META_POLICY: "combined" # llm, learned, conditional, combined
+META_GREEDY: False
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
 LLM_PRETRAIN: False #pretrain options with llm meta policy
 RANDOM_PRETRAIN: False #pretrian options with random meta policy
-PRETRAIN_LEN: 3700 # length of pretraining
+PRETRAIN_LEN: 7000 # length of pretraining
 
 # env specific
 # ENV_NAME: "Craftax-Symbolic-v1"
