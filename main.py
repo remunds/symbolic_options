@@ -51,7 +51,6 @@ def outer_make_train(config):
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
             if train:
-                print("Train: sticky, episodic: ", sticky_actions, episodic_life)
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
                 env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
@@ -60,8 +59,7 @@ def outer_make_train(config):
             return env
         env = create_env(True, False)
         test_env = create_env(False, False)
-        if config.get("TEST_MODIFS", False):
-            test_env = create_env(False, True)
+        test_env = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
@@ -84,8 +82,8 @@ def outer_make_train(config):
             return env
         env = create_env(True, False)
         test_env = create_env(False, False)
-        if config.get("TEST_MODIFS", False):
-            test_env = create_env(False, True)
+        # if config.get("TEST_MODIFS", False):
+        test_env_modif = create_env(False, True)
         renderer = KangarooRenderer()
     # only quick PQN test:
     elif config.get("ENV_NAME", None) == "Pong":
@@ -159,9 +157,9 @@ def outer_make_train(config):
             return make_train_pqn_craftax(config, env, test_env, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
-            return make_train_hier_jaxatari(config, env, test_env, meta_policy, llm_meta_policy, renderer)
+            return make_train_hier_jaxatari(config, env, test_env, test_env_modif, meta_policy, llm_meta_policy, renderer)
         else:
-            return make_train_pqn_jaxatari(config, env, test_env, meta_policy, renderer)
+            return make_train_pqn_jaxatari(config, env, test_env, test_env_modif, meta_policy, renderer)
 
 def single_run(config):#
     config = {**config, **config["alg"]}

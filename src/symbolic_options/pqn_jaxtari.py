@@ -67,7 +67,7 @@ def rtpt_callback():
     global rtpt
     rtpt.step()
 
-def make_train(config, env, test_env, meta_policy, renderer):
+def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
     global rtpt
 
     config["NUM_UPDATES"] = (
@@ -105,6 +105,13 @@ def make_train(config, env, test_env, meta_policy, renderer):
     )
     test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
         test_env.step#, in_axes=(0, 0, None)
+    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+
+    modif_test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env_modif.reset)(
+        jax.random.split(rng, n_envs)#, env_params
+    )
+    modif_test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+        test_env_modif.step#, in_axes=(0, 0, None)
     )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
 
     # epsilon-greedy exploration
@@ -172,7 +179,7 @@ def make_train(config, env, test_env, meta_policy, renderer):
         # TRAINING LOOP
         def _update_step(runner_state, unused):
 
-            train_state, expl_state, test_metrics, rng = runner_state
+            train_state, expl_state, test_metrics, test_metrics_modif, rng = runner_state
 
             # SAMPLE PHASE
             def _step_env(carry, _):
@@ -340,11 +347,22 @@ def make_train(config, env, test_env, meta_policy, renderer):
                     train_state.n_updates
                     % int(config["NUM_UPDATES"] * config["TEST_INTERVAL"])
                     == 0,
-                    lambda _: get_test_metrics(train_state, _rng),
+                    lambda _: get_test_metrics(train_state, False, _rng),
                     lambda _: test_metrics,
                     operand=None,
                 )
                 metrics.update({f"test/{k}": v for k, v in test_metrics.items()})
+                if config.get("TEST_MODIFS", False):
+                    rng, _rng = jax.random.split(rng)
+                    test_metrics_modif = jax.lax.cond(
+                        train_state.n_updates
+                        % int(config["NUM_UPDATES"] * config["TEST_INTERVAL"])
+                        == 0,
+                        lambda _: get_test_metrics(train_state, True, _rng),
+                        lambda _: test_metrics_modif,
+                        operand=None,
+                    )
+                    metrics.update({f"test_modif/{k}": v for k, v in test_metrics_modif.items()})
 
             # report on wandb if required
             if config["WANDB_MODE"] != "disabled":
@@ -363,11 +381,11 @@ def make_train(config, env, test_env, meta_policy, renderer):
 
             # update rtpt
             jax.debug.callback(rtpt_callback)
-            runner_state = (train_state, tuple(expl_state), test_metrics, rng)
+            runner_state = (train_state, tuple(expl_state), test_metrics, test_metrics_modif, rng)
 
             return runner_state, metrics
 
-        def get_test_metrics(train_state, rng):
+        def get_test_metrics(train_state, modif, rng):
 
             if not config.get("TEST_DURING_TRAINING", False):
                 return None
@@ -387,15 +405,27 @@ def make_train(config, env, test_env, meta_policy, renderer):
                 action = jax.vmap(eps_greedy_exploration)(
                     jax.random.split(_rng, config["TEST_NUM_ENVS"]), q_vals, eps
                 )
-                new_obs, new_env_state, reward, done, info = test_vmap_step(
-                    config["TEST_NUM_ENVS"]
-                )(_rng, env_state, action)
+                new_obs, new_env_state, reward, done, info = jax.lax.cond(
+                    modif,
+                    lambda _: modif_test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    lambda _: test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    operand=None,
+                ) 
+                # new_obs, new_env_state, reward, done, info = test_vmap_step(
+                #     config["TEST_NUM_ENVS"]
+                # )(_rng, env_state, action)
                 info.pop("all_rewards")
                 env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
                 return (new_env_state, new_obs, rng), (info, env_state_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
-            init_obs, env_state = test_vmap_reset(config["TEST_NUM_ENVS"])(_rng)
+            init_obs, env_state = jax.lax.cond(
+                modif,
+                lambda _: modif_test_vmap_reset(config["TEST_NUM_ENVS"])(_rng),
+                lambda _: test_vmap_reset(config["TEST_NUM_ENVS"])(_rng),
+                operand=None,
+            )
+            # init_obs, env_state = test_vmap_reset(config["TEST_NUM_ENVS"])(_rng)
 
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, _rng), None, config["TEST_NUM_STEPS"]
@@ -405,7 +435,7 @@ def make_train(config, env, test_env, meta_policy, renderer):
             if config.get("RECORD_VIDEO", False):
                 jax.lax.cond(
                     train_state.n_updates > 0,
-                    lambda _: jax.debug.callback(video_callback, states, None, None, dones, train_state.n_updates, renderer),
+                    lambda _: jax.debug.callback(video_callback, states, None, None, dones, train_state.n_updates, renderer, modif=modif),
                     lambda _: None,
                     operand=None,
                 )
@@ -424,14 +454,17 @@ def make_train(config, env, test_env, meta_policy, renderer):
             return done_infos
 
         rng, _rng = jax.random.split(rng)
-        test_metrics = get_test_metrics(train_state, _rng)
+        test_metrics = get_test_metrics(train_state, False, _rng)
+
+        rng, _rng = jax.random.split(rng)
+        test_metrics_modif = get_test_metrics(train_state, True, _rng)
 
         rng, _rng = jax.random.split(rng)
         expl_state = vmap_reset(config["NUM_ENVS"])(_rng)
 
         # train
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_state, expl_state, test_metrics, _rng)
+        runner_state = (train_state, expl_state, test_metrics, test_metrics_modif, _rng)
 
         runner_state, metrics = jax.lax.scan(
             _update_step, runner_state, None, config["NUM_UPDATES"]

@@ -91,20 +91,20 @@ class CraftaxClassicRenderer(CraftaxRenderer):
         return render_craftax_classic_pixels(craftax_state, block_pixel_size=block_pixel_size)
 
 
-video_thread = None
+# video_thread = None
 
-def video_callback(states, active_agents, combined_qs, dones, step, renderer):
-    global video_thread
+def video_callback(states, active_agents, combined_qs, dones, step, renderer, modif=False):
+    # global video_thread
 
     if renderer is None:
         print("Renderer is None, skipping video generation")
         return
 
-    if video_thread is not None and video_thread.is_alive():
-        print("Thread is still running, skipping video generation")
-        return
+    # if video_thread is not None and video_thread.is_alive():
+    #     print("Thread is still running, skipping video generation")
+    #     return
     
-    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, combined_qs, dones, step, renderer))
+    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, combined_qs, dones, step, renderer, modif))
     video_thread.start()
 
 def add_active_agent(screen, active_agent_num: int):
@@ -112,7 +112,7 @@ def add_active_agent(screen, active_agent_num: int):
     text_surface = font.render(f"active agent: {active_agent_num}", True, (255, 255, 255)) 
     screen.blit(text_surface, (300, 300)) 
 
-def collect_video(states, active_agents, combined_qs, dones, step, renderer):
+def collect_video(states, active_agents, combined_qs, dones, step, renderer, modif=False):
     print("Rendering video...")
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
@@ -173,5 +173,8 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer):
 
     fps = 30 #if not isinstance(renderer, CraftaxRenderer) else 30
     video = wandb.Video(frames, fps=fps, format="mp4")
-    wandb.log({f"video_{step}": video}, step=wandb.run.step)
+    name = f"video_{step}"
+    if modif:
+        name = f"video_{step}_modif"
+    wandb.log({name: video}, step=wandb.run.step)
     print("Video done.")
