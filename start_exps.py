@@ -13,12 +13,10 @@ def run_sh_command(command):
         sys.exit(1)
     return stdout.decode('utf-8')
 
-# pqn_jaxtari_k4_hier_comb.yaml
-# pqn_jaxtari_k5_hier_comb_pre.yaml
-run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_jaxtari_k4_hier_comb")
-print("pqn_jaxtari_k4_hier_comb done.")
-run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_jaxtari_k5_hier_comb_pre")
-print("pqn_jaxtari_k5_hier_comb_pre done.")
+# run_sh_command("CUDA_VISIBLE_DEVICES=15 uv run main.py +alg=pqn_jaxtari_sea5_hier_comb_pre")
+# print("pqn_jaxtari_sea5_hier_comb_pre done.")
+run_sh_command("CUDA_VISIBLE_DEVICES=14 uv run main.py +alg=pqn_jaxtari_sea4_hier_comb")
+print("pqn_jaxtari_sea4_hier_comb done.")
 
 
 
