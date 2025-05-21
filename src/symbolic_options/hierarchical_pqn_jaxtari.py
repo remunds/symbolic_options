@@ -124,7 +124,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             rng
         )  # a key for sampling random actions and one for picking
         greedy_actions = jnp.argmax(q_vals, axis=-1)
-        chosed_actions = jnp.where(
+        chosen_actions = jnp.where(
             jax.random.uniform(rng_e, greedy_actions.shape)
             < eps,  # pick the actions that should be random
             jax.random.randint(
@@ -132,9 +132,11 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             ),  # sample random actions,
             greedy_actions,
         )
-        return chosed_actions
+        return chosen_actions
 
-    def train(rng):
+
+
+    def train(rng, params):
 
         original_rng = rng[0]
 
@@ -180,7 +182,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             norm_input=config.get("NORM_INPUT", False),
         )
 
-        def create_agent(rng, network, lr):
+        def create_agent(rng, params, network, lr):
             obs_len = np.prod(config["OBS_SHAPE"])
             init_x = jnp.zeros(obs_len)
             network_variables = network.init(rng, init_x, train=False)
@@ -188,10 +190,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
                 optax.radam(learning_rate=lr),
             )
-
             train_state = CustomTrainState.create(
                 apply_fn=network.apply,
-                params=network_variables["params"],
+                params=network_variables["params"] if params is None else params,
                 batch_stats=network_variables["batch_stats"],
                 tx=tx,
             )
@@ -204,16 +205,19 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         # create multiple agents
         # networks.append(meta_network)
         rng_keys = jax.random.split(rng, num_agents)
-        train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, None, None))(rng_keys, network, lr)
+        # print("outer params0: ", params[0])
+        # train_state0 = create_agent(rng_keys[0], params[0], network, lr)
+        # print shape of each param
+        train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, None, None))(rng_keys, params, network, lr)
 
         # meta_policy_string = config.get("META_POLICY", "llm")
-        # if meta_policy_string == "learned" or meta_policy_string == "combined": 
+        # if meta_policy_string == "learned" or meta_policy_string == "combined":
         meta_network = QNetwork(
             action_dim=num_agents,
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
-        meta_train_state = create_agent(rng, meta_network, lr_meta)
+        meta_train_state = create_agent(rng, None, meta_network, lr_meta)
         # else:
         #     meta_network = None
         #     meta_train_state = None

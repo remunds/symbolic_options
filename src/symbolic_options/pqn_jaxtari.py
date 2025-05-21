@@ -130,7 +130,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
         )
         return chosed_actions
 
-    def train(rng):
+    def train(rng, params):
 
         original_rng = rng[0]
 
@@ -156,7 +156,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
             norm_input=config.get("NORM_INPUT", False),
         )
 
-        def create_agent(rng):
+        def create_agent(rng, params):
             obs_len = np.prod(config["OBS_SHAPE"])
             init_x = jnp.zeros(obs_len)
             network_variables = network.init(rng, init_x, train=False)
@@ -167,14 +167,14 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
 
             train_state = CustomTrainState.create(
                 apply_fn=network.apply,
-                params=network_variables["params"],
+                params=network_variables["params"] if params is None else params,
                 batch_stats=network_variables["batch_stats"],
                 tx=tx,
             )
             return train_state
 
         rng, _rng = jax.random.split(rng)
-        train_state = create_agent(rng)
+        train_state = create_agent(rng, params)
 
         # TRAINING LOOP
         def _update_step(runner_state, unused):
