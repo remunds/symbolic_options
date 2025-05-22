@@ -1,22 +1,23 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_llm"
-TOTAL_TIMESTEPS: 1e7 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
-TOTAL_TIMESTEPS_DECAY: 1e7 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
+ALG_NAME: "pqn_hier_pre_long"
+TOTAL_TIMESTEPS: 1e9 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
+TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #512 # parallel environments
 # NUM_STEPS: 32 # steps per environment in each update
 NUM_STEPS: 128 # steps per environment in each update
 # NUM_ENVS / NUM_STEPS should be 8 for original PQN (they did 128/32)
-#EPS_START: 1.0
-EPS_START: 0.1
-EPS_FINISH: 0.1 # Best for Kang
-EPS_DECAY: 0.3 #Best for Kang
+# EPS_FINISH: 0.1 # Best for Kang
+# EPS_DECAY: 0.3 #Best for Kang
+# EPS_START: 1.0
 # EPS_FINISH: 0.001 #Best for seaquest
-# EPS_DECAY: 0.1 # Best for Seaquest 
-META_EPS_START: 0.1 # this will be the value until training is started
+EPS_START: 0.001
+EPS_FINISH: 0.001
+EPS_DECAY: 0.1 # Best for Seaquest 
+META_EPS_START: 1.0 
 META_EPS_FINISH: 0.001
 META_EPS_DECAY: 0.1 # ratio of total updates
-NUM_EPOCHS: 4
+NUM_EPOCHS: 5
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 NORM_INPUT: False 
@@ -32,9 +33,11 @@ STICKY_ACTIONS: False
 EPISODIC_LIFE: False
 
 LOAD_PARAMS: True # load from previous run
+FREEZE_AGENTS: True # do not continue learning skills
+LOAD_PATH: "./pretrained"
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
-META_POLICY: "llm" # llm, learned, conditional, combined
+META_POLICY: "learned" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)

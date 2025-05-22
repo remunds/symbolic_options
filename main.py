@@ -12,15 +12,10 @@ from jaxatari.games.jax_kangaroo import JaxKangaroo, KangarooRenderer
 from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
-from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
-from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
 
 from jaxatari.wrappers import FlattenObservationWrapper, AtariWrapper
 from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
 from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
-# from symbolic_options.reward_functions.craftax import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, level_progression_reward 
-from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore
-from symbolic_options.utils.video_recorder import CraftaxRenderer, CraftaxClassicRenderer
 
 
 def outer_make_train(config):
@@ -100,6 +95,8 @@ def outer_make_train(config):
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper
+        from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore
+        from symbolic_options.utils.video_recorder import CraftaxClassicRenderer
 
         # reward_funcs_craftax = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
         reward_funcs = [survival_reward, combat_reward, crafting_reward, resource_collection_reward, explore]
@@ -153,6 +150,8 @@ def outer_make_train(config):
         meta_policy = None
 
     if "Craftax" in config.get("ENV_NAME", None):
+        from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
+        from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
         if config.get("HIERARCHICAL", False):
             return make_train_hier_craftax(config, env, test_env, env_params, meta_policy, llm_meta_policy, renderer)
         else:
@@ -164,38 +163,42 @@ def outer_make_train(config):
             return make_train_pqn_jaxatari(config, env, test_env, test_env_modif, meta_policy, renderer)
         
 def load_network_params(config):
-    if config.get("LOAD_PARAMS", False) and config.get("SAVE_PATH", None) is not None:
+    if config.get("LOAD_PARAMS", False) and config.get("LOAD_PATH", None) is not None:
         from symbolic_options.purejaxql.save_load import load_params
         import os
         alg_name = config["ALG_NAME"]
         env_name = config["ENV_NAME"]
-        save_dir = os.path.join(config["SAVE_PATH"], env_name)
+        load_dir = os.path.join(config["LOAD_PATH"], env_name)
         params = []
+        batch_stats = []
         for i in range(config["NUM_SEEDS"]):
-            save_path = os.path.join(
-                save_dir,
+            load_path = os.path.join(
+                load_dir,
                 f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}.safetensors',
             )
             inner_params = None
+            inner_bs = None
             # check if file exists
-            if os.path.exists(save_path):
-                print(f"Loading params from {save_path}")
-                inner_params = load_params(save_path)
+            if os.path.exists(load_path):
+                print(f"Loading params from {load_path}")
+                inner_params = load_params(load_path)
+                inner_bs = load_params(load_path.replace(".safetensors", "_bs.safetensors"))
             else:
-                print(f"File {save_path} does not exist, using random params")
+                print(f"File {load_path} does not exist, using random params")
             params.append(inner_params)
+            batch_stats.append(inner_bs)
 
         # transform to pytree
         params = jax.tree_util.tree_map(
             lambda *xs: jnp.stack(xs), *params
         )
-        # params = jax.tree_util.tree_map(
-        #     lambda *x: x, *params
-        # )
+        batch_stats = jax.tree_util.tree_map(
+            lambda *xs: jnp.stack(xs), *batch_stats
+        )
 
-        return params
+        return params, batch_stats
 
-    return None
+    return None, None
 
 def single_run(config):#
     config = {**config, **config["alg"]}
@@ -219,15 +222,15 @@ def single_run(config):#
     rng = jax.random.PRNGKey(config["SEED"])
     t0 = time.time()
     rngs = jax.random.split(rng, config["NUM_SEEDS"])
-    params = load_network_params(config)
+    params, batch_stats = load_network_params(config)
     train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
     # time compilation
     print("Compiling...")
     start = time.time()
     # with jax.profiler.trace("outputs/jax-trace", create_perfetto_link=True):
-    train_vjit.lower(rngs, params).compile()
+    train_vjit.lower(rngs, params, batch_stats).compile()
     print(f"Compilation took {time.time()-start} seconds.")
-    outs = jax.block_until_ready(train_vjit(rngs, params))
+    outs = jax.block_until_ready(train_vjit(rngs, params, batch_stats))
     print(f"Took {time.time()-t0} seconds to complete.")
 
     if config.get("SAVE_PATH", None) is not None:
@@ -244,11 +247,17 @@ def single_run(config):#
 
         for i, rng in enumerate(rngs):
             params = jax.tree_util.tree_map(lambda x: x[i], model_state.params)
+            batch_stats = jax.tree_util.tree_map(lambda x: x[i], model_state.batch_stats)
             save_path = os.path.join(
                 save_dir,
                 f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}.safetensors',
             )
+            save_path_bs = os.path.join(
+                save_dir,
+                f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}_bs.safetensors',
+            )
             save_params(params, save_path)
+            save_params(batch_stats, save_path_bs)
             print(f"Saved params to {save_path}")
 
 

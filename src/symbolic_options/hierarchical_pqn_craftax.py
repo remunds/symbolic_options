@@ -283,7 +283,7 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                 )
 
                 # select the q_vals and action of the active agent
-                q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
+                # q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
                 new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])] # (128,)
 
                 new_obs, new_env_state, reward, new_done, info = env.step(
@@ -586,7 +586,7 @@ def make_train(config, env, test_env, env_params, meta_policy, meta_policy_llm, 
                     )
                     # different eps for each env
                     _rngs = jax.random.split(rng_a, config["TEST_NUM_ENVS"])
-                    eps = jnp.full(config["TEST_NUM_ENVS"], eps_scheduler(train_state.n_updates))
+                    eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"]) 
                     new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
                     return new_action, q_vals
 

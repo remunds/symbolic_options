@@ -136,7 +136,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
 
 
-    def train(rng, params):
+    def train(rng, params, batch_stats):
 
         original_rng = rng[0]
 
@@ -182,7 +182,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             norm_input=config.get("NORM_INPUT", False),
         )
 
-        def create_agent(rng, params, network, lr):
+        def create_agent(rng, params, batch_stats, network, lr):
             obs_len = np.prod(config["OBS_SHAPE"])
             init_x = jnp.zeros(obs_len)
             network_variables = network.init(rng, init_x, train=False)
@@ -193,7 +193,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             train_state = CustomTrainState.create(
                 apply_fn=network.apply,
                 params=network_variables["params"] if params is None else params,
-                batch_stats=network_variables["batch_stats"],
+                batch_stats=network_variables["batch_stats"] if batch_stats is None else batch_stats,
                 tx=tx,
             )
             return train_state
@@ -208,7 +208,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         # print("outer params0: ", params[0])
         # train_state0 = create_agent(rng_keys[0], params[0], network, lr)
         # print shape of each param
-        train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, None, None))(rng_keys, params, network, lr)
+        train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, 0, None, None))(rng_keys, params, batch_stats, network, lr)
 
         # meta_policy_string = config.get("META_POLICY", "llm")
         # if meta_policy_string == "learned" or meta_policy_string == "combined":
@@ -217,7 +217,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
-        meta_train_state = create_agent(rng, None, meta_network, lr_meta)
+        meta_train_state = create_agent(rng, None, None, meta_network, lr_meta)
         # else:
         #     meta_network = None
         #     meta_train_state = None
@@ -317,7 +317,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 )
 
                 # select the q_vals and action of the active agent
-                q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
+                # q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
                 new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])] # (128,)
 
                 new_obs, new_env_state, reward, new_done, info = vmap_step(
@@ -501,9 +501,23 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 }
                 return metrics, train_state
 
+            def fake_update_agent(train_state, state_idx, rng, network): 
+                metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
+                train_state = train_state.replace(
+                    timesteps=train_state.timesteps
+                    + config["NUM_STEPS"] * config["NUM_ENVS"]
+                )
+                train_state = train_state.replace(n_updates=train_state.n_updates + 1)
+                return metrics_meta, train_state
+
             # end of _update_agent
             rngs = jax.random.split(rng, num_agents)
-            metrics, train_states = jax.vmap(_update_agent, in_axes=(0, 0, 0, None))(train_states, jnp.arange(num_agents), rngs, network)
+
+            if config.get("FREEZE_AGENTS", False):
+                metrics, train_states = jax.vmap(fake_update_agent, in_axes=(0, 0, 0, None))(train_states, jnp.arange(num_agents), rngs, network)
+            else:
+                metrics, train_states = jax.vmap(_update_agent, in_axes=(0, 0, 0, None))(train_states, jnp.arange(num_agents), rngs, network)
+
             # currently each key has a list of three values, make it s.t. we have key_0, key_1, key_2
             metrics = {f"{k}_{i}": v[i] for k, v in metrics.items() for i in range(v.shape[0])}
             
@@ -518,13 +532,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
                 else:
                     # if n_updates > config["LLM_PRETRAIN"], we want to use the learned meta-policy
-                    def fake_update_agent(train_state, state_idx, rng, network): 
-                        metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
-                        train_state = train_state.replace(
-                            timesteps=train_state.timesteps
-                            + config["NUM_STEPS"] * config["NUM_ENVS"]
-                        )
-                        return metrics_meta, train_state
 
                     metrics_meta, meta_train_state = jax.lax.cond(
                         train_states.n_updates[0] > config["PRETRAIN_LEN"],
@@ -599,8 +606,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                         train=False,
                     )
                     # different eps for each env
-                    _rngs = jax.random.split(rng_a, config["NUM_ENVS"])
-                    eps = jnp.full(config["NUM_ENVS"], eps_scheduler(train_state.n_updates))
+                    _rngs = jax.random.split(rng_a, config["TEST_NUM_ENVS"])
+                    eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"])  
                     new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
                     return new_action, q_vals
 
