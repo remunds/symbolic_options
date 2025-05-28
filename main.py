@@ -14,13 +14,12 @@ from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
 
 from jaxatari.wrappers import FlattenObservationWrapper, AtariWrapper
-from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
-from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
 
 
 def outer_make_train(config):
 
     if config.get("ENV_NAME", None) == "Seaquest":
+        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
         from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
@@ -51,6 +50,7 @@ def outer_make_train(config):
         test_env_modif = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
+        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
@@ -94,7 +94,7 @@ def outer_make_train(config):
         )
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper
+        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper, NoNecessitiesWrapper
         from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore
         from symbolic_options.utils.video_recorder import CraftaxClassicRenderer
 
@@ -108,25 +108,38 @@ def outer_make_train(config):
         )
         env_params = basic_env.default_params
 
-        if len(reward_funcs) > 0: 
-            basic_env = MultiRewardWrapper(basic_env, reward_funcs)
-            log_env = MultiRewardLogWrapper(basic_env)
-        else:
-            log_env = LogWrapper(basic_env)
-        if config["USE_OPTIMISTIC_RESETS"]:
-            env = OptimisticResetVecEnvWrapper(
-                log_env,
-                num_envs=config["NUM_ENVS"],
-                reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["NUM_ENVS"]),
-            )
-            test_env = OptimisticResetVecEnvWrapper(
-                log_env,
-                num_envs=config["TEST_NUM_ENVS"],
-                reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["TEST_NUM_ENVS"]),
-            )
-        else:
-            env = BatchEnvWrapper(log_env, num_envs=config["NUM_ENVS"])
-            test_env = BatchEnvWrapper(log_env, num_envs=config["TEST_NUM_ENVS"])
+        def create_env(env, train: bool = False, modification: bool = False):
+            if modification:
+                env = NoNecessitiesWrapper(env)
+            if len(reward_funcs) > 0:
+                env = MultiRewardWrapper(env, reward_funcs)
+                env = MultiRewardLogWrapper(env)
+            else:
+                env = LogWrapper(env)
+
+            if train:
+                if config["USE_OPTIMISTIC_RESETS"]:
+                    env = OptimisticResetVecEnvWrapper(
+                        env,
+                        num_envs=config["NUM_ENVS"],
+                        reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["NUM_ENVS"]),
+                    )
+                else:
+                    env = BatchEnvWrapper(env, num_envs=config["NUM_ENVS"])
+            else:
+                if config["USE_OPTIMISTIC_RESETS"]:
+                    env = OptimisticResetVecEnvWrapper(
+                        env,
+                        num_envs=config["TEST_NUM_ENVS"],
+                        reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["TEST_NUM_ENVS"]),
+                    )
+                else:
+                    env = BatchEnvWrapper(env, num_envs=config["TEST_NUM_ENVS"])
+            return env
+
+        env = create_env(basic_env, True, False)
+        test_env = create_env(basic_env, False, False)
+        test_env_modif = create_env(basic_env, False, True)
 
     else:
         raise NotImplementedError(f"Env {config['ENV_NAME']} not implemented.")
@@ -153,9 +166,9 @@ def outer_make_train(config):
         from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
         from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
         if config.get("HIERARCHICAL", False):
-            return make_train_hier_craftax(config, env, test_env, env_params, meta_policy, llm_meta_policy, renderer)
+            return make_train_hier_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, llm_meta_policy, renderer)
         else:
-            return make_train_pqn_craftax(config, env, test_env, env_params, meta_policy, renderer)
+            return make_train_pqn_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
             return make_train_hier_jaxatari(config, env, test_env, test_env_modif, meta_policy, llm_meta_policy, renderer)

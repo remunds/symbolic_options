@@ -42,9 +42,10 @@ def shaped_reward(prev_state: SeaquestState, state: SeaquestState):
     return reward
 
 # @jax.jit
-def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
+def llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state: SeaquestState):
     """
     Mutually exclusive.
+    Default is shooting.
     """
     if isinstance(env_state, MultiRewardLogEnvState):
         state = env_state.env_state
@@ -56,6 +57,46 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestStat
     divers_active = state.diver_positions[..., 2] != 0 # (128, 4)
     divers_per_env_active = jnp.sum(divers_active, axis=1) # (128,)
     decision = jnp.where(divers_per_env_active > 0, 1, 0) 
+
+    # fight (if enemy is close)
+    danger_dist_sq = 40 ** 2
+    enemy_positions = jnp.concatenate([state.shark_positions, state.sub_positions], axis=1) 
+    active_mask = jnp.where(enemy_positions[..., 2] != 0, 1, 0) #(128, 24)
+
+    dx = enemy_positions[..., 0] - state.player_x[:, None] #(128, 24)
+    dy = enemy_positions[..., 1] - state.player_y[:, None]#(128, 24)
+    enemy_dist_sq = dx ** 2 + dy ** 2
+    enemy_close = enemy_dist_sq < danger_dist_sq #(128, 24)
+    # mask inactive enemies
+    enemy_close = enemy_close * active_mask #(128, 24)
+    # sum over all enemies
+    enemy_close = jnp.sum(enemy_close, axis=1) #(128)
+    decision = jnp.where(enemy_close, 0, decision)
+
+    # go up (if oxygen is low or all divers are collected)
+    oxygen_low = state.oxygen < 10
+    all_divers_collected = state.divers_collected >= 6
+    condition = jnp.logical_or(oxygen_low, all_divers_collected) 
+    # possibly override collect and fight decision
+    decision = jnp.where(condition, 2, decision)
+
+    # rewrite decision to fake Q-vals
+    q_vals = jax.nn.one_hot(decision, 3)
+
+    return q_vals
+
+# @jax.jit
+def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
+    """
+    Mutually exclusive. Default is divers.
+    """
+    if isinstance(env_state, MultiRewardLogEnvState):
+        state = env_state.env_state
+    if isinstance(state, AtariState):
+        state = state.env_state
+    # 0: fight, 1: collect, 2: go up
+
+    decision = jnp.ones_like(state.player_x)
 
     # fight (if enemy is close)
     danger_dist_sq = 40 ** 2

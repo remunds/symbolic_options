@@ -168,7 +168,7 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
             # add sidebar to each frame
             texts = [(f"Option {t_i}:", f"{t:.2f}") for t_i, t in enumerate(combined_qs[i])]
             new_frames[i] = sidebar_renderer.render(frames[i], texts, active_agents[i])
-        sidebar_renderer.close()
+        # sidebar_renderer.close()
         frames = new_frames
 
     fps = 30 #if not isinstance(renderer, CraftaxRenderer) else 30

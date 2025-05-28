@@ -78,7 +78,7 @@ def rtpt_callback():
     global rtpt
     rtpt.step()
 
-def make_train(config, env, test_env, env_params, meta_policy, renderer):
+def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, renderer):
     global rtpt
 
     config["NUM_UPDATES"] = (
@@ -112,7 +112,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
         )
         return chosed_actions
 
-    def train(rng, params):
+    def train(rng, params, batch_stats):
 
         original_rng = rng[0]
 
@@ -140,7 +140,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
             norm_input=config.get("NORM_INPUT", False),
         )
 
-        def create_agent(rng, params):
+        def create_agent(rng, params, batch_stats):
             init_x = jnp.zeros((1, *env.observation_space(env_params).shape))
             network_variables = network.init(rng, init_x, train=False)
             tx = optax.chain(
@@ -151,18 +151,18 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
             train_state = CustomTrainState.create(
                 apply_fn=network.apply,
                 params=network_variables["params"] if params is None else params,
-                batch_stats=network_variables["batch_stats"],
+                batch_stats=network_variables["batch_stats"] if batch_stats is None else batch_stats,
                 tx=tx,
             )
             return train_state
 
         rng, _rng = jax.random.split(rng)
-        train_state = create_agent(rng, params)
+        train_state = create_agent(rng, params, batch_stats)
 
         # TRAINING LOOP
         def _update_step(runner_state, unused):
 
-            train_state, expl_state, test_metrics, rng = runner_state
+            train_state, expl_state, test_metrics, test_metrics_modif, rng = runner_state
 
             # SAMPLE PHASE
             def _step_env(carry, _):
@@ -358,11 +358,24 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                     train_state.n_updates
                     % int(config["NUM_UPDATES"] * config["TEST_INTERVAL"])
                     == 0,
-                    lambda _: get_test_metrics(train_state, _rng),
+                    lambda _: get_test_metrics(train_state, False, _rng),
                     lambda _: test_metrics,
                     operand=None,
                 )
                 metrics.update({f"test/{k}": v for k, v in test_metrics.items()})
+                if config.get("TEST_MODIFS", False):
+                    rng, _rng = jax.random.split(rng)
+                    test_metrics_modif = jax.lax.cond(
+                        train_state.n_updates
+                        % int(config["NUM_UPDATES"] * config["TEST_INTERVAL"])
+                        == 0,
+                        lambda _: get_test_metrics(train_state, True, _rng),
+                        lambda _: test_metrics_modif,
+                        operand=None,
+                    )
+                    metrics.update(
+                        {f"test_modif/{k}": v for k, v in test_metrics_modif.items()}
+                    )
 
             # remove achievement metrics if not logging them
             if not config.get("LOG_ACHIEVEMENTS", False):
@@ -391,11 +404,11 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 jax.debug.callback(callback, metrics, original_rng)
             jax.debug.callback(rtpt_callback)
 
-            runner_state = (train_state, tuple(expl_state), test_metrics, rng)
+            runner_state = (train_state, tuple(expl_state), test_metrics, test_metrics_modif, rng)
 
             return runner_state, metrics
 
-        def get_test_metrics(train_state, rng):
+        def get_test_metrics(train_state, modif, rng):
 
             if not config.get("TEST_DURING_TRAINING", False):
                 return None
@@ -415,15 +428,27 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
                 new_action = jax.vmap(eps_greedy_exploration)(
                     jax.random.split(_rng, config["TEST_NUM_ENVS"]), q_vals, eps
                 )
-                new_obs, new_env_state, reward, new_done, info = test_env.step(
-                    _rng, env_state, new_action, env_params
+                new_obs, new_env_state, reward, new_done, info = jax.lax.cond(
+                    modif,
+                    lambda _: test_env_modif.step(
+                        _rng, env_state, new_action, env_params
+                    ),
+                    lambda _: test_env.step(
+                        _rng, env_state, new_action, env_params
+                    ),
+                    operand=None,
                 )
                 env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
                 rewards = info.pop("all_rewards", 0)
                 return (new_env_state, new_obs, rng), (info, env_state_vid, new_done[0])
 
             rng, _rng = jax.random.split(rng)
-            init_obs, env_state = test_env.reset(_rng, env_params)
+            init_obs, env_state = jax.lax.cond(
+                modif,
+                lambda _: test_env_modif.reset(_rng, env_params),
+                lambda _: test_env.reset(_rng, env_params),
+                operand=None,
+            )
 
             _, output = jax.lax.scan(
                 _env_step, (env_state, init_obs, _rng), None, config["TEST_NUM_STEPS"]
@@ -433,7 +458,7 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
             if config.get("RECORD_VIDEO", False):
                 jax.lax.cond(
                     train_state.n_updates > 0,
-                    lambda _: jax.debug.callback(video_callback, states, None, None, dones, train_state.n_updates, renderer),
+                    lambda _: jax.debug.callback(video_callback, states, None, None, dones, train_state.n_updates, renderer, modif=modif),
                     lambda _: None,
                     operand=None,
                 )
@@ -457,14 +482,17 @@ def make_train(config, env, test_env, env_params, meta_policy, renderer):
             return done_infos
 
         rng, _rng = jax.random.split(rng)
-        test_metrics = get_test_metrics(train_state, _rng)
+        test_metrics = get_test_metrics(train_state, False, _rng)
+
+        rng, _rng = jax.random.split(rng)
+        test_metrics_modif = get_test_metrics(train_state, True, _rng)
 
         rng, _rng = jax.random.split(rng)
         expl_state = env.reset(_rng, env_params)
 
         # train
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_state, expl_state, test_metrics, _rng)
+        runner_state = (train_state, expl_state, test_metrics, test_metrics_modif, _rng)
 
         runner_state, metrics = jax.lax.scan(
             _update_step, runner_state, None, config["NUM_UPDATES"]

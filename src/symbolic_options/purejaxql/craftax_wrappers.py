@@ -146,6 +146,41 @@ class OptimisticResetVecEnvWrapper(GymnaxWrapper):
         state, obs = jax.vmap(auto_reset)(done, state_re, state_st, obs_re, obs_st)
 
         return obs, state, reward, done, info
+    
+class NoNecessitiesWrapper(GymnaxWrapper):
+    """
+    Removes food, water, energy necessities from the environment. 
+    -> Always keeps them at the maximum value.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+
+    @partial(jax.jit, static_argnums=(0, 2))
+    def reset(self, key: chex.PRNGKey, params=None):
+        obs, state = self._env.reset(key, params)
+        return obs, state
+
+    @partial(jax.jit, static_argnums=(0, 4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state,
+        action: Union[int, float],
+        params=None,
+    ):
+        # replace state's necessities with the initial values 
+        _, reset_state = self.reset(key, params)
+        modif_state = state.replace(
+            player_food=reset_state.player_food,
+            player_drink=reset_state.player_drink,
+            player_energy=reset_state.player_energy,
+        )
+
+        obs, new_state, reward, done, info = self._env.step(
+            key, modif_state, action, params
+        )
+        
+        return obs, new_state, reward, done, info
 
 
 @struct.dataclass

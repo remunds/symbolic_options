@@ -146,14 +146,14 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             (config["EPS_DECAY"]) * config["NUM_UPDATES_DECAY"],
         )
         print("normal transition steps: ", (config["EPS_DECAY"]) * config["NUM_UPDATES_DECAY"])
-
+        pretrain_len = config.get("PRETRAIN_LEN", 0) if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False) else 0 
         eps_meta_scheduler = optax.linear_schedule(
             config["META_EPS_START"],
             config["META_EPS_FINISH"],
-            config["META_EPS_DECAY"] * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]),
+            config["META_EPS_DECAY"] * (config["NUM_UPDATES_DECAY"] - pretrain_len),
         )
-        print("meta eps start: ", config["META_EPS_START"]) 
-        print("meta transition steps: ", (config["META_EPS_DECAY"]) * (config["NUM_UPDATES_DECAY"] - config["PRETRAIN_LEN"]))
+        print("meta eps start: ", config["META_EPS_START"])
+        print("meta transition steps: ", (config["META_EPS_DECAY"]) * (config["NUM_UPDATES_DECAY"] - pretrain_len))
 
         lr_scheduler = optax.linear_schedule(
             init_value=config["LR"],

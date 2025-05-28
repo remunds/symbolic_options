@@ -1,8 +1,8 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
 ALG_NAME: "pqn_hier_comb_pre_long"
-TOTAL_TIMESTEPS: 1e9 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
-TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
+TOTAL_TIMESTEPS: 1e8 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
+TOTAL_TIMESTEPS_DECAY: 1e8 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #512 # parallel environments
 # NUM_STEPS: 32 # steps per environment in each update
 NUM_STEPS: 128 # steps per environment in each update
@@ -39,7 +39,7 @@ LOAD_PATH: "./pretrained"
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
 META_POLICY: "combined" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
-META_GREEDY: True # True: take greedy option, else sample from q-dist
+META_GREEDY: False # True: take greedy option, else sample from q-dist
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
 LLM_PRETRAIN: False #pretrain options with llm meta policy
 RANDOM_PRETRAIN: False #pretrian options with random meta policy
