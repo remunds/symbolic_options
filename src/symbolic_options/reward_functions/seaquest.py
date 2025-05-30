@@ -86,7 +86,7 @@ def llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state
     return q_vals
 
 # @jax.jit
-def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
+def llm_meta_policy_divers_default(network, meta_train_state, last_obs, env_state: SeaquestState):
     """
     Mutually exclusive. Default is divers.
     """
@@ -124,6 +124,9 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestStat
     q_vals = jax.nn.one_hot(decision, 3)
 
     return q_vals
+
+def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
+    return llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state)
 
 # @jax.jit
 def divers_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
