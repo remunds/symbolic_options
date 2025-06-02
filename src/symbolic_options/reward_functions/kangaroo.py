@@ -29,24 +29,30 @@ from jaxatari.games.jax_kangaroo import KangarooState
 #     reward = 0.1*ladder_reward + ladder_up_reward + level_up_reward 
 #     return reward
 
+# @jax.jit
+# def navigate_reward(prev_state: KangarooState, state: KangarooState):
+#     # navigate to and up ladder
+#     dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
+#     dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
+#     dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
+
+#     # find ladder on current level (closest y)
+#     closest_idx = jnp.argmin(dy) 
+#     x_diff = dx[closest_idx] - dx_prev[closest_idx]
+#     ladder_reward = -(x_diff) # reward for getting closer to ladder
+
+#     # reward going up (e.g. ladder) 
+#     ladder_up_reward = -3*(state.player.y - prev_state.player.y)
+#     dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
+
+
+#     return ladder_reward + ladder_up_reward + dying_reward
 @jax.jit
 def navigate_reward(prev_state: KangarooState, state: KangarooState):
-    # navigate to and up ladder
-    dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
-    dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
-    dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
-
-    # find ladder on current level (closest y)
-    closest_idx = jnp.argmin(dy) 
-    x_diff = dx[closest_idx] - dx_prev[closest_idx]
-    ladder_reward = -(x_diff) # reward for getting closer to ladder
-
     # reward going up (e.g. ladder) 
-    ladder_up_reward = -3*(state.player.y - prev_state.player.y)
-    dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
+    going_up_reward = (state.player.y - prev_state.player.y)
 
-
-    return ladder_reward + ladder_up_reward + dying_reward
+    return going_up_reward 
 
 # @jax.jit
 # def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):

@@ -1,9 +1,7 @@
 # Symbolic Option Learning
-Note: Currently only Seaquest is supported (next: Kangaroo).
-
 - Install uv: https://docs.astral.sh/uv/getting-started/installation/
 - Clone JAXAtari:
-```git clone https://github.com/k4ntz/JAXAtari -b lib```
+```git clone https://github.com/k4ntz/JAXAtari```
 - Setup env:
 ```uv sync```
 - Run example:
