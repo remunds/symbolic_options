@@ -84,7 +84,6 @@ def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
     prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
     new_active = jnp.sum(state.level.fruit_actives, axis=-1)
     reward = jnp.where(new_active < prev_active, 1, 0)
-    # problem is: if life lost -> new_active < prev_active 
     # level_up_reward = jnp.where(prev_state.current_level != state.current_level, 300, 0)
     return reward #+ level_up_reward
 
