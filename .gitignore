@@ -177,3 +177,5 @@ models/
 results/
 outputs/
 wandb/
+pretrained/
+*.pdf
