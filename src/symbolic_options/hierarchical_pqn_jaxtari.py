@@ -401,7 +401,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 _, targets = jax.lax.scan(
                     _get_target,
                     (lambda_returns, last_q),
-                    jax.tree_map(lambda x: x[:-1], transitions),
+                    jax.tree.map(lambda x: x[:-1], transitions),
                     reverse=True,
                 )
                 lambda_targets = jnp.concatenate((targets, lambda_returns[np.newaxis]))
@@ -464,10 +464,10 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                         return x
 
                     rng, _rng = jax.random.split(rng)
-                    minibatches = jax.tree_util.tree_map(
+                    minibatches = jax.tree.map(
                         lambda x: preprocess_transition(x, _rng), transitions
                     )  # num_actors*num_envs (batch_size), ...
-                    targets = jax.tree_map(
+                    targets = jax.tree.map(
                         lambda x: preprocess_transition(x, _rng), lambda_targets
                     )
 
@@ -698,7 +698,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 # )(_rng, env_state, action)
                 # only select the first value of all arrays of env_state for video generation
                 # (env==0)
-                env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
+                env_state_vid = jax.tree.map(lambda x: x[0], new_env_state)
                 # remove all_rewards from info (cannot be logged)
                 rewards = info.pop("all_rewards")[:, :num_agents] #removes shaped meta-reward
 
@@ -752,7 +752,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 )
 
             # return mean of done infos
-            done_infos = jax.tree_map(
+            done_infos = jax.tree.map(
                 lambda x: jnp.nanmean(
                     jnp.where(
                         infos["returned_episode"],

@@ -258,7 +258,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
             _, targets = jax.lax.scan(
                 _get_target,
                 (lambda_returns, last_q),
-                jax.tree_util.tree_map(lambda x: x[:-1], transitions),
+                jax.tree.map(lambda x: x[:-1], transitions),
                 reverse=True,
             )
             lambda_targets = jnp.concatenate((targets, lambda_returns[np.newaxis]))
@@ -311,10 +311,10 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
                     return x
 
                 rng, _rng = jax.random.split(rng)
-                minibatches = jax.tree_util.tree_map(
+                minibatches = jax.tree.map(
                     lambda x: preprocess_transition(x, _rng), transitions
                 )  # num_actors*num_envs (batch_size), ...
-                targets = jax.tree_util.tree_map(
+                targets = jax.tree.map(
                     lambda x: preprocess_transition(x, _rng), lambda_targets
                 )
 
@@ -415,7 +415,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
                 #     config["TEST_NUM_ENVS"]
                 # )(_rng, env_state, action)
                 info.pop("all_rewards")
-                env_state_vid = jax.tree_map(lambda x: x[0], new_env_state)
+                env_state_vid = jax.tree.map(lambda x: x[0], new_env_state)
                 return (new_env_state, new_obs, rng), (info, env_state_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
@@ -441,7 +441,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
                 )
 
             # return mean of done infos
-            done_infos = jax.tree_util.tree_map(
+            done_infos = jax.tree.map(
                 lambda x: jnp.nanmean(
                     jnp.where(
                         infos["returned_episode"],
