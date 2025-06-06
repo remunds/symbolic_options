@@ -10,11 +10,6 @@ import pygame
 from jaxatari.renderers import AtraJaxisRenderer, PyGameRenderer
 from jaxatari.wrappers import AtariState, MultiRewardLogEnvState as JaxtariMultiRewardLogEnvState
 from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
-from craftax.craftax.renderer import render_craftax_pixels # for craftax
-from craftax.craftax_classic.renderer import render_craftax_pixels as render_craftax_classic_pixels# for craftax_classic
-from craftax.craftax.constants import (
-    BLOCK_PIXEL_SIZE_HUMAN,
-)
 
 import wandb
 
@@ -81,14 +76,35 @@ class SidebarRenderer:
         pygame.quit()
 
 class CraftaxRenderer:
+    def __init__(self):
+        from craftax.craftax.renderer import render_craftax_pixels # for craftax
+        from craftax.craftax.constants import (
+            BLOCK_PIXEL_SIZE_HUMAN,
+        )
+        self.render_fn = render_craftax_pixels
+        self.BLOCK_PIXEL_SIZE_HUMAN = BLOCK_PIXEL_SIZE_HUMAN
+
+
     @partial(jax.jit, static_argnums=(0,2))
-    def render(self, craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN):
-        return render_craftax_pixels(craftax_state, block_pixel_size=block_pixel_size)
+    def render(self, craftax_state, block_pixel_size=None):
+        if block_pixel_size is None:
+            block_pixel_size = self.BLOCK_PIXEL_SIZE_HUMAN
+        return self.render_fn(craftax_state, block_pixel_size=block_pixel_size)
 
 class CraftaxClassicRenderer(CraftaxRenderer):
+    def __init__(self):
+        from craftax.craftax_classic.renderer import render_craftax_pixels as render_craftax_classic_pixels# for craftax_classic
+        from craftax.craftax_classic.constants import (
+            BLOCK_PIXEL_SIZE_HUMAN,
+        )
+        self.render_fn = render_craftax_classic_pixels
+        self.BLOCK_PIXEL_SIZE_HUMAN = BLOCK_PIXEL_SIZE_HUMAN
+
     @partial(jax.jit, static_argnums=(0,2))
-    def render(self, craftax_state, block_pixel_size=BLOCK_PIXEL_SIZE_HUMAN):
-        return render_craftax_classic_pixels(craftax_state, block_pixel_size=block_pixel_size)
+    def render(self, craftax_state, block_pixel_size=None):
+        if block_pixel_size is None:
+            block_pixel_size = self.BLOCK_PIXEL_SIZE_HUMAN
+        return self.render_fn(craftax_state, block_pixel_size=block_pixel_size)
 
 
 # video_thread = None
