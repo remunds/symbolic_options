@@ -29,6 +29,14 @@ pip3 install -U "jax[cuda12]"
 python3 main.py +alg=pqn_jaxtari_sea3_hier_llm
 ```
 
+### Docker container (CUDA enabled)
+```bash
+docker build -t symbol_opt .
+```
+```bash
+docker run -it --rm --gpus device=0 -v "$(pwd)":/app -w /app symbol_opt uv run --active main.py +alg=pqn_jaxtari_sea3_hier_llm
+```
+
 
 # Using custom rewards
 As an example see how the rewards are included in main.py.
