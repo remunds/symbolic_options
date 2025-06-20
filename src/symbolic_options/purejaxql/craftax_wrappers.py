@@ -4,7 +4,7 @@ import chex
 import numpy as np
 from flax import struct
 from functools import partial
-from typing import Optional, Tuple, Union, Any
+from typing import Dict, Optional, Tuple, Union, Any
 
 
 class GymnaxWrapper(object):
@@ -146,6 +146,41 @@ class OptimisticResetVecEnvWrapper(GymnaxWrapper):
         state, obs = jax.vmap(auto_reset)(done, state_re, state_st, obs_re, obs_st)
 
         return obs, state, reward, done, info
+    
+class NoNecessitiesWrapper(GymnaxWrapper):
+    """
+    Removes food, water, energy necessities from the environment. 
+    -> Always keeps them at the maximum value.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+
+    @partial(jax.jit, static_argnums=(0, 2))
+    def reset(self, key: chex.PRNGKey, params=None):
+        obs, state = self._env.reset(key, params)
+        return obs, state
+
+    @partial(jax.jit, static_argnums=(0, 4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state,
+        action: Union[int, float],
+        params=None,
+    ):
+        # replace state's necessities with the initial values 
+        _, reset_state = self.reset(key, params)
+        modif_state = state.replace(
+            player_food=reset_state.player_food,
+            player_drink=reset_state.player_drink,
+            player_energy=reset_state.player_energy,
+        )
+
+        obs, new_state, reward, done, info = self._env.step(
+            key, modif_state, action, params
+        )
+        
+        return obs, new_state, reward, done, info
 
 
 @struct.dataclass
@@ -196,5 +231,104 @@ class LogWrapper(GymnaxWrapper):
         info["returned_episode_returns"] = state.returned_episode_returns
         info["returned_episode_lengths"] = state.returned_episode_lengths
         info["timestep"] = state.timestep
+        info["returned_episode"] = done
+        return obs, state, reward, done, info
+    
+class MultiRewardWrapper(GymnaxWrapper):
+    def __init__(self, env, reward_funcs=[]):
+        super().__init__(env)
+        self.reward_funcs = tuple(reward_funcs)
+
+    @partial(jax.jit, static_argnums=(0, 2))
+    def reset(self, key: chex.PRNGKey, params=None):
+        return self._env.reset(key, params)
+    
+    @partial(jax.jit, static_argnums=(0, 4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state,
+        action: Union[int, float],
+        params=None,
+    ):
+        obs, env_state, reward, done, info = self._env.step(
+            key, state, action, params
+        )
+        # get rewards
+        rewards = []
+        for f in self.reward_funcs:
+            rewards.append(f(state, env_state))
+        rewards = jnp.stack(rewards, axis=0)
+        
+        info["all_rewards"] = rewards
+
+        return obs, env_state, reward, done, info
+    
+@struct.dataclass
+class MultiRewardLogEnvState:
+    env_state: Any
+    episode_returns_env: float
+    episode_returns: chex.Array#[float]
+    episode_lengths: int
+    returned_episode_returns_env: float
+    returned_episode_returns: chex.Array#[float]
+    returned_episode_lengths: int
+
+class MultiRewardLogWrapper(GymnaxWrapper):
+    """Log the episode returns and lengths."""
+
+    def __init__(self, env):
+        super().__init__(env)
+
+    @partial(jax.jit, static_argnums=(0,2))
+    def reset(
+        self, key: chex.PRNGKey, params=None
+    ) -> Tuple[chex.Array, MultiRewardLogEnvState]:
+        obs, env_state = self._env.reset(key, params)
+        dummy_info = self._env.step(key, env_state, 0, params)[4]
+        episode_returns_init = jnp.zeros_like(dummy_info["all_rewards"])
+        state = MultiRewardLogEnvState(env_state, 0.0, episode_returns_init, 0, 0.0, episode_returns_init, 0)
+        return obs, state
+
+    @partial(jax.jit, static_argnums=(0,4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state: MultiRewardLogEnvState,
+        action: Union[int, float],
+        params=None,
+        
+    ) -> Tuple[chex.Array, MultiRewardLogEnvState, jnp.ndarray, bool, Dict[Any, Any]]:
+        """Step the env.
+        Args:
+          key: PRNG key.
+          state: The current state of the env.
+          action: The action to take.
+
+        Returns:
+          A tuple of (observation, state, reward, done, info).
+        """
+        obs, env_state, reward, done, info = self._env.step(
+            key, state.env_state, action, params
+        )
+        new_episode_return_env = state.episode_returns_env + reward 
+        new_episode_return = state.episode_returns + info["all_rewards"]
+        new_episode_length = state.episode_lengths + 1
+        state = MultiRewardLogEnvState(
+            env_state=env_state,
+            episode_returns_env=new_episode_return_env * (1 - done),
+            episode_returns=new_episode_return * (1 - done),
+            episode_lengths=new_episode_length * (1 - done),
+            returned_episode_returns_env=state.returned_episode_returns_env * (1 - done)
+            + new_episode_return_env * done,
+            returned_episode_returns=state.returned_episode_returns * (1 - done)
+            + new_episode_return * done,
+            returned_episode_lengths=state.returned_episode_lengths * (1 - done)
+            + new_episode_length * done,
+        )
+        info["returned_episode_env_returns"] = state.returned_episode_returns_env
+        for i, r in enumerate(new_episode_return):
+            info[f"returned_episode_returns_{i}"] = state.returned_episode_returns[i]
+        info["returned_episode_lengths"] = state.returned_episode_lengths
         info["returned_episode"] = done
         return obs, state, reward, done, info

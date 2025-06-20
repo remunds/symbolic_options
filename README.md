@@ -1,22 +1,51 @@
 # Symbolic Option Learning
-Note: Currently only Seaquest is supported (next: Kangaroo).
 
-- Install uv: https://docs.astral.sh/uv/getting-started/installation/
-- Clone JAXAtari:
-```git clone https://github.com/k4ntz/JAXAtari -b lib```
-- Setup env:
-```uv sync```
+## Installation
+### UV project manager
+You can either use [uv](https://docs.astral.sh/uv/getting-started/installation/):
+- CUDA users probably want to enable GPU acceleration:
+```bash
+uv add "jax[cuda12]"
+``` 
+- Now simply run example (e.g. hierarchical seaquest agent with fixed meta-policy):
+```bash
+uv run main.py +alg=pqn_jaxtari_sea3_hier_llm
+```
+### Python venv
+Instead, you can use venv:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+python3 -m pip install -U pip
+pip3 install -e .
+```
+- Optionally enable CUDA acceleration:
+```bash
+pip3 install -U "jax[cuda12]"
+```
 - Run example:
-```uv run main.py +alg=pqn_jaxtari```
+```bash
+python3 main.py +alg=pqn_jaxtari_sea3_hier_llm
+```
+
+### Docker container (CUDA enabled)
+```bash
+docker build -t symbol_opt .
+```
+```bash
+docker run -it --rm --gpus device=0 -v "$(pwd)":/app -w /app symbol_opt uv run --active main.py +alg=pqn_jaxtari_sea3_hier_llm
+```
+
 
 # Using custom rewards
 As an example see how the rewards are included in main.py.
-They are implemented in src/reward_functions/seaquest.py.
+They are implemented in src/reward_functions/.
 
 # Config
-See example config under config/alg/pqn_jaxtari.yaml.
+See example config under config/alg/pqn_jaxtari_k1.yaml.
 
 For training hierarchical options with different reward functions (designed by LLMs) set META_POLICY to "llm".
 
 # Acknowledgement
-PQN implementation taken from https://github.com/mttga/purejaxql/tree/main
+PQN implementation from https://github.com/mttga/purejaxql/tree/main
