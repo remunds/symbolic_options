@@ -17,8 +17,35 @@ from jaxatari.wrappers import FlattenObservationWrapper, AtariWrapper
 
 
 def outer_make_train(config):
+    if config.get("ENV_NAME", None) == "Pong":
+        from jaxatari.games.jax_pong import JaxPong, PongRenderer
+        from jaxatari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.pong import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
+        from jaxatari.games.mods.pong_mods import LazyEnemyWrapper, RandomizedEnemyWrapper
 
-    if config.get("ENV_NAME", None) == "Seaquest":
+        reward_funcs = [track_and_align, return_shot, defensive_positioning]
+
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, randomized_enemy: bool = False, lazy_enemy: bool = False):
+            env = JaxPong(reward_funcs=reward_funcs)
+            if randomized_enemy:
+                env = RandomizedEnemyWrapper(env)
+            if lazy_enemy:
+                env = LazyEnemyWrapper(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(True, True, False) # train on weaker (randomized) enemy
+        test_env = create_env(False, True, False) # randomized enemy
+        test_env_modif = create_env(False, False, False) # evaluate on stronger (default) enemy 
+        renderer = PongRenderer()
+
+    elif config.get("ENV_NAME", None) == "Seaquest":
         from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
         from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
