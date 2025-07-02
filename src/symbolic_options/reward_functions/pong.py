@@ -8,7 +8,9 @@ GAMMA = 0.99
 
 def unpack(state):
     while not isinstance(state, PongState):
-        if hasattr(state, 'env_state'):
+        if hasattr(state, 'atari_state'):
+            state = state.atari_state
+        elif hasattr(state, 'env_state'):
             state = state.env_state
         else:
             raise ValueError("State is not a PongState or does not contain a PongState.")
@@ -160,7 +162,7 @@ def track_and_align(prev: PongState, curr: PongState) -> float:
     Reward ∈ [0, 1] based on reduction in vertical distance to ball.
     1 when distance significantly reduced, 0 when increased.
     """
-    env_reward = JaxPong()._get_env_reward(prev, curr)
+    env_reward = JaxPong()._get_reward(prev, curr)
     # prev_dist = abs((prev.player_y+PLAYER_H/2) - prev.ball_y)
     # curr_dist = abs((curr.player_y+PLAYER_H/2) - curr.ball_y)
     # reward = jnp.where(
@@ -181,7 +183,7 @@ def return_shot(prev: PongState, curr: PongState) -> float:
     """
     Binary reward ∈ {0, 1} if paddle and ball align closely at contact range.
     """
-    env_reward = JaxPong()._get_env_reward(prev, curr)
+    env_reward = JaxPong()._get_reward(prev, curr)
     x_close = abs(curr.ball_x - PLAYER_X) < 1.5 * PLAYER_W 
     y_align = abs(curr.ball_y - curr.player_y) < 0.5 * PLAYER_H
     ball_speed = abs(curr.ball_x - prev.ball_x) * 0.1
@@ -196,7 +198,7 @@ def defensive_positioning(prev: PongState, curr: PongState) -> float:
     1 for maximal improvement, 0 if worsened.
     """
     screen_center_y = SCREEN_CENTER_Y 
-    env_reward = JaxPong()._get_env_reward(prev, curr)
+    env_reward = JaxPong()._get_reward(prev, curr)
     # distance to mid
     dist = abs((curr.player_y + PLAYER_H / 2) - screen_center_y)
     reward = jnp.where(dist < 3, 1.0, 0.0)

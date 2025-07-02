@@ -7,8 +7,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pygame
-from jaxatari.renderers import AtraJaxisRenderer, PyGameRenderer
-from jaxatari.wrappers import AtariState, MultiRewardLogEnvState as JaxtariMultiRewardLogEnvState
+from jaxatari.renderers import JAXGameRenderer, PyGameRenderer
+from jaxatari.wrappers import AtariState, MultiRewardLogState as JaxtariMultiRewardLogState
 from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
 
 import wandb
@@ -132,7 +132,9 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
     print("Rendering video...")
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
-    if isinstance(states, JaxtariMultiRewardLogEnvState) or isinstance(states, CraftaxMultiRewardLogEnvState):
+    if isinstance(states, JaxtariMultiRewardLogState):
+        states = states.atari_state
+    elif isinstance(states, CraftaxMultiRewardLogEnvState):
         states = states.env_state
     if isinstance(states, AtariState):
         states = states.env_state
@@ -146,7 +148,7 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
     # select every 4th frame (and only the first num_states)
     # states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states][::4], states)
     states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states], states)
-    if isinstance(renderer, AtraJaxisRenderer) or isinstance(renderer, CraftaxRenderer):
+    if isinstance(renderer, JAXGameRenderer) or isinstance(renderer, CraftaxRenderer):
         rasters = jax.vmap(renderer.render)(states_reduced)
         frames = np.array(rasters, dtype=np.uint8)
     elif isinstance(renderer, PyGameRenderer):
@@ -167,7 +169,7 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
         frames = np.array(frames, dtype=np.uint8)
 
     # for jaxtari
-    if isinstance(renderer, AtraJaxisRenderer) or isinstance(renderer, PyGameRenderer):
+    if isinstance(renderer, JAXGameRenderer) or isinstance(renderer, PyGameRenderer):
         # shape currently is (N, W, H, 3)
         # but should be (N, 3, H, W)
         frames = np.transpose(frames, (0, 3, 2, 1))

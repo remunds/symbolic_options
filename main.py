@@ -13,7 +13,7 @@ from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_h
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
 
-from jaxatari.wrappers import FlattenObservationWrapper, AtariWrapper
+from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, AtariWrapper
 
 
 def outer_make_train(config):
@@ -37,12 +37,16 @@ def outer_make_train(config):
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
                 env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
-        env = create_env(True, True, False) # train on weaker (randomized) enemy
-        test_env = create_env(False, True, False) # randomized enemy
-        test_env_modif = create_env(False, False, False) # evaluate on stronger (default) enemy 
+        # env = create_env(True, True, False) # train on weaker (randomized) enemy
+        # test_env = create_env(False, True, False) # randomized enemy
+        # test_env_modif = create_env(False, False, False) # evaluate on stronger (default) enemy 
+        env = create_env(True, False, False)
+        test_env = create_env(False, False, False) # randomized enemy
+        test_env_modif = create_env(False, True, False) # evaluate on randomized
         renderer = PongRenderer()
 
     elif config.get("ENV_NAME", None) == "Seaquest":
@@ -69,6 +73,7 @@ def outer_make_train(config):
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
                 env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
@@ -93,6 +98,7 @@ def outer_make_train(config):
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
                 env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
@@ -102,15 +108,6 @@ def outer_make_train(config):
         test_env_modif = create_env(False, True)
         renderer = KangarooRenderer()
     # only quick PQN test:
-    elif config.get("ENV_NAME", None) == "Pong":
-        from jaxatari.games.jax_pong import JaxPong, PongRenderer
-        from jaxatari.wrappers import LogWrapper
-        env = JaxPong()
-        renderer = PongRenderer()
-        env = AtariWrapper(env, sticky_actions=False)
-        env = FlattenObservationWrapper(env)
-        env = LogWrapper(env)
-
     elif "Craftax" in config.get("ENV_NAME", None):
         from craftax.craftax_env import make_craftax_env_from_name
         from symbolic_options.purejaxql.craftax_wrappers import (

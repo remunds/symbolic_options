@@ -88,7 +88,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
-
     config["NUM_AGENTS"] = len(env.reward_funcs)
     config["OBS_SHAPE"] = env.observation_space().shape
     config["NUM_ACTIONS"] = env.action_space().n
@@ -100,23 +99,29 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    # vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    #     env.step#, in_axes=(0, 0, None)
+    # )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    vmap_step = lambda env_state, action: jax.vmap(
         env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    # test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    test_vmap_step = lambda env_state, action: jax.vmap(
         test_env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    # )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     modif_test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env_modif.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    modif_test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    # modif_test_vmap_step = lambda n_envs: lambda env_state, action: jax.vmap(
+    modif_test_vmap_step = lambda env_state, action: jax.vmap(
         test_env_modif.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):
@@ -320,9 +325,10 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 # q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
                 new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])] # (128,)
 
-                new_obs, new_env_state, reward, new_done, info = vmap_step(
-                    config["NUM_ENVS"]
-                )(rng_s, env_state, new_action)
+                # new_obs, new_env_state, reward, new_done, info = vmap_step(
+                #     config["NUM_ENVS"]
+                # )(rng_s, env_state, new_action)
+                new_obs, new_env_state, reward, new_done, info = vmap_step(env_state, new_action)
 
                 rewards = info.pop("all_rewards") #(128,3)
                 # add reward to end -> (128,4)
@@ -681,16 +687,21 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
                 # active_agent shape: (num_envs)
                 combined_q_vid = combined_q[0]
+                # TODO: change back
                 active_agent_vid = active_agent[0]
                 # select the actions of the active agent 
+                #TODO: uncomment
                 action = all_actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
+                # action = all_actions[0, jnp.arange(config["TEST_NUM_ENVS"])]
 
                 # use the selected actions to step the environment
                 # new_obs, new_env_state, reward, done, info = test_vmap_step(
                 new_obs, new_env_state, reward, done, info = jax.lax.cond(
                     modif,
-                    lambda _: modif_test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
-                    lambda _: test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    # lambda _: modif_test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    # lambda _: test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    lambda _: modif_test_vmap_step(env_state, action),
+                    lambda _: test_vmap_step(env_state, action),
                     operand=None
                 )
                 # new_obs, new_env_state, reward, done, info = step_fn(

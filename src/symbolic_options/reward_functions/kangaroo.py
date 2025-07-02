@@ -1,7 +1,17 @@
 import jax
 import jax.numpy as jnp
-from jaxatari.wrappers import MultiRewardLogEnvState, AtariState
+from jaxatari.wrappers import MultiRewardLogState, AtariState
 from jaxatari.games.jax_kangaroo import KangarooState
+
+def unpack(state):
+    while not isinstance(state, KangarooState):
+        if hasattr(state, 'atari_state'):
+            state = state.atari_state
+        elif hasattr(state, 'env_state'):
+            state = state.env_state
+        else:
+            raise ValueError("State is not a PongState or does not contain a PongState.")
+    return state
 
 # @jax.jit
 # def navigate_reward(prev_state: KangarooState, state: KangarooState):
@@ -133,12 +143,8 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     """
     Mutually exclusive.
     """
-    state= env_state
+    state = unpack(env_state)
 
-    if isinstance(env_state, MultiRewardLogEnvState):
-        state = env_state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
     # 0: navigate, 1: handle enemies, 2: collect fruits
     
     # default is navigation
