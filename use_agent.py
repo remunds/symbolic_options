@@ -14,8 +14,11 @@ from jaxatari.games.jax_pong import JaxPong
 from jaxatari.wrappers import AtariWrapper, FlattenObservationWrapper, ObjectCentricWrapper, MultiRewardLogWrapper
 from symbolic_options.reward_functions.pong import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
 
-def create_env():
-    reward_funcs = [track_and_align, return_shot, defensive_positioning]
+def create_env(config):
+    if config.get("ALG_NAME", "") == "pqn_hier_llm":
+        reward_funcs = [track_and_align, return_shot, defensive_positioning]
+    else:
+        reward_funcs = []
     env = JaxPong(reward_funcs=reward_funcs)
     env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
     env = ObjectCentricWrapper(env)
@@ -61,11 +64,18 @@ def load_network_params(config):
 
 def run_agent(config):
     config = {**config, **config["alg"]}
-    from symbolic_options.hierarchical_pqn_jaxtari import QNetwork, CustomTrainState
+    if config.get("ALG_NAME", "") == "pqn_hier_llm":
+        from symbolic_options.hierarchical_pqn_jaxtari import QNetwork, CustomTrainState
+        #TODO: this is just pong currently
+        from symbolic_options.reward_functions.pong import llm_meta_policy
+    else: # for now default to pqn
+        from symbolic_options.pqn_jaxtari import QNetwork, CustomTrainState
+        # always use option0 (default)
+        llm_meta_policy = lambda a,b,c,d: jnp.array([0]) 
+
     import numpy as np
     import optax
 
-    from symbolic_options.reward_functions.pong import llm_meta_policy
 
     params, batch_stats = load_network_params(config)
     if params is None or batch_stats is None:
@@ -73,7 +83,7 @@ def run_agent(config):
     
     rng = jax.random.PRNGKey(config["SEED"])
 
-    env = create_env()
+    env = create_env(config)
 
     config["NUM_AGENTS"] = len(env.reward_funcs)
     config["OBS_SHAPE"] = env.observation_space().shape
@@ -111,9 +121,15 @@ def run_agent(config):
         return train_state
 
     num_agents = config.get("NUM_AGENTS", 1)
+    print(f"Number of agents (subpolicies): {num_agents}")
 
-    rng_keys = jax.random.split(rng, num_agents)
-    train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, 0, None, None))(rng_keys, params, batch_stats, network, 0.0)
+    if num_agents == 0 or num_agents == 1:
+        train_states: CustomTrainState = create_agent(rng, params, batch_stats, network, 0.0)
+        # add a vmap dimension for consistency
+        train_states = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), train_states)
+    else:
+        rng_keys = jax.random.split(rng, num_agents)
+        train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, 0, None, None))(rng_keys, params, batch_stats, network, 0.0)
 
     def get_action_and_qvals(train_states, obs, env_state):
         def compute_actions_subpolicy(obs, train_state):

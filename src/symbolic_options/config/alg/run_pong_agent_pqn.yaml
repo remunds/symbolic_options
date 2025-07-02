@@ -1,7 +1,7 @@
 NUM_SEEDS: 1
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_llm" #use pqn only for default agent
+ALG_NAME: "pqn" # default PQN
 NUM_ENVS: 1024 # parallel environments
 NUM_STEPS: 10000 #number of steps per env
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
