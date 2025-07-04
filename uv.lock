@@ -764,7 +764,7 @@ with-cuda = [
 [[package]]
 name = "jaxatari"
 version = "0.1.0"
-source = { git = "https://github.com/k4ntz/JAXAtari?rev=408ae56bb8b4d5f2720cbc28b09e004a8c4431af#408ae56bb8b4d5f2720cbc28b09e004a8c4431af" }
+source = { git = "https://github.com/k4ntz/JAXAtari?rev=c31bc919b70b0fc4167e6b37560a932c74858a85#c31bc919b70b0fc4167e6b37560a932c74858a85" }
 dependencies = [
     { name = "absl-py" },
     { name = "chex" },
@@ -2217,7 +2217,7 @@ requires-dist = [
     { name = "gymnax", specifier = ">=0.0.8" },
     { name = "hydra-core", specifier = ">=1.3.2" },
     { name = "jax", extras = ["cuda12"], specifier = ">=0.6.0" },
-    { name = "jaxatari", git = "https://github.com/k4ntz/JAXAtari?rev=408ae56bb8b4d5f2720cbc28b09e004a8c4431af" },
+    { name = "jaxatari", git = "https://github.com/k4ntz/JAXAtari?rev=c31bc919b70b0fc4167e6b37560a932c74858a85" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "optax", specifier = ">=0.2.4" },
     { name = "rtpt", specifier = ">=0.0.4" },

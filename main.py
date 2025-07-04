@@ -41,13 +41,40 @@ def outer_make_train(config):
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
-        # env = create_env(True, True, False) # train on weaker (randomized) enemy
-        # test_env = create_env(False, True, False) # randomized enemy
-        # test_env_modif = create_env(False, False, False) # evaluate on stronger (default) enemy 
-        env = create_env(True, False, False)
-        test_env = create_env(False, False, False) # randomized enemy
-        test_env_modif = create_env(False, True, False) # evaluate on randomized
+        env = create_env(True, True, False) # train on weaker (randomized) enemy
+        test_env = create_env(False, True, False) # randomized enemy
+        test_env_modif = create_env(False, False, False) # evaluate on stronger (default) enemy 
+        # env = create_env(True, False, False)
+        # test_env = create_env(False, False, False) 
+        # test_env_modif = create_env(False, True, False) # evaluate on randomized
         renderer = PongRenderer()
+
+    elif config.get("ENV_NAME", None) == "Breakout":
+        from jaxatari.games.jax_breakout import JaxBreakout, BreakoutRenderer
+        from jaxatari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.breakout import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
+        from jaxatari.games.mods.breakout_mods import LeftDrift
+
+        reward_funcs = [track_and_align, return_shot, defensive_positioning]
+
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, left_drift: bool = False):
+            env = JaxBreakout(reward_funcs=reward_funcs)
+            if left_drift:
+                env = LeftDrift(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(True, False)
+        test_env = create_env(False, False)
+        test_env_modif = create_env(False, True) # evaluate on mod
+        renderer = BreakoutRenderer()
 
     elif config.get("ENV_NAME", None) == "Seaquest":
         from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
