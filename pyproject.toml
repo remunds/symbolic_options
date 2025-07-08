@@ -24,4 +24,4 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 #jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "da3ee670f0e904313ca44078e21006bc49a012b9" }
-jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "c31bc919b70b0fc4167e6b37560a932c74858a85" }
+jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "98905f716d3e63a0c4513757bac53084f5ea23c4" }

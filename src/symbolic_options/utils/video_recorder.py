@@ -171,16 +171,18 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
     # for jaxtari
     if isinstance(renderer, JAXGameRenderer) or isinstance(renderer, PyGameRenderer):
         # shape currently is (N, W, H, 3)
-        # but should be (N, 3, H, W)
-        frames = np.transpose(frames, (0, 3, 2, 1))
+        # but should be (N, 3, W, H)
+        frames = np.transpose(frames, (0, 3, 1, 2))
     else: # for craftax
         # shape currently is (N, H, W, 3)
-        # but should be (N, 3, H, W) 
-        frames = np.transpose(frames, (0, 3, 1, 2))
+        # but should be (N, 3, W, H) 
+        frames = np.transpose(frames, (0, 3, 2, 1))
 
     if active_agents is not None:
         sidebar_renderer = SidebarRenderer(frames[0].shape)
         # (N, 3, H, W + sidebar_width)
+        # new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
+        # (N, 3, W, H + sidebar_width)
         new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
         for i in range(len(frames)):
             # add sidebar to each frame

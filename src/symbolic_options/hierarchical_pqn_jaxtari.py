@@ -687,12 +687,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
                 # active_agent shape: (num_envs)
                 combined_q_vid = combined_q[0]
-                # TODO: change back
                 active_agent_vid = active_agent[0]
                 # select the actions of the active agent 
-                #TODO: uncomment
                 action = all_actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
-                # action = all_actions[0, jnp.arange(config["TEST_NUM_ENVS"])]
 
                 # use the selected actions to step the environment
                 # new_obs, new_env_state, reward, done, info = test_vmap_step(

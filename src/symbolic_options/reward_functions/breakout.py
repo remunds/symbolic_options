@@ -2,9 +2,7 @@ import jax.numpy as jnp
 from jax import lax
 import jax
 from enum import IntEnum
-from jaxatari.games.jax_breakout import BreakoutState, JaxBreakout
-
-GAMMA = 0.99 
+from jaxatari.games.jax_breakout import BreakoutState, JaxBreakout, BreakoutConstants #PLAYER_SIZE, PLAYER_SIZE_SMALL, PLAYER_START_X, PLAYER_START_Y
 
 def unpack(state):
     while not isinstance(state, BreakoutState):
@@ -16,11 +14,6 @@ def unpack(state):
             raise ValueError("State is not a BreakoutState or does not contain a BreakoutState.")
     return state
 
-PLAYER_SIZE = (16, 4)  # Width, Height of paddle
-PLAYER_SIZE_SMALL = (12, 4)
-PLAYER_START_X = 99
-PLAYER_START_Y = 189
-
 def track_and_align(prev: BreakoutState, curr: BreakoutState) -> float:
     """
     Reward ∈ [0, 1] based on reduction in horizontal distance to ball.
@@ -28,31 +21,31 @@ def track_and_align(prev: BreakoutState, curr: BreakoutState) -> float:
     """
     player_width = jnp.where(
         curr.small_paddle,
-        PLAYER_SIZE_SMALL[0],
-        PLAYER_SIZE[0]
+        BreakoutConstants().PLAYER_SIZE_SMALL[0],
+        BreakoutConstants().PLAYER_SIZE[0]
     )
 
     distance = abs((curr.player_x + player_width / 2) - curr.ball_x)
     reward = jnp.where(distance < 3, 1.0, 0.0)
     return reward
 
-def return_shot(prev: BreakoutState, curr: BreakoutState) -> float:
-    """
-    Binary reward ∈ {0, 1} if paddle and ball align closely at contact range.
-    """
-    y_close = abs(curr.ball_y - PLAYER_START_Y) < 1.5 * PLAYER_SIZE[1]
-    player_width = jnp.where(
-        curr.small_paddle,
-        PLAYER_SIZE_SMALL[0],
-        PLAYER_SIZE[0]
-    )
-    x_align = abs(curr.ball_x - (curr.player_x + player_width / 2)) < 0.5 * PLAYER_SIZE[0]
-    # ball_speed = abs(curr.ball_x - prev.ball_x) * 0.1
-    # reward alignment + ball speed if ball is close to paddle
-    # reward = jnp.where(y_close & x_align, 1.0 + ball_speed, 0.0)
-    reward = jnp.where(y_close & x_align, 1.0, 0.0)
+# def return_shot(prev: BreakoutState, curr: BreakoutState) -> float:
+#     """
+#     Binary reward ∈ {0, 1} if paddle and ball align closely at contact range.
+#     """
+#     y_close = abs(curr.ball_y - PLAYER_START_Y) < 1.5 * PLAYER_SIZE[1]
+#     player_width = jnp.where(
+#         curr.small_paddle,
+#         PLAYER_SIZE_SMALL[0],
+#         PLAYER_SIZE[0]
+#     )
+#     x_align = abs(curr.ball_x - (curr.player_x + player_width / 2)) < 0.5 * PLAYER_SIZE[0]
+#     # ball_speed = abs(curr.ball_x - prev.ball_x) * 0.1
+#     # reward alignment + ball speed if ball is close to paddle
+#     # reward = jnp.where(y_close & x_align, 1.0 + ball_speed, 0.0)
+#     reward = jnp.where(y_close & x_align, 1.0, 0.0)
 
-    return reward
+#     return reward
 
 def return_shot(prev: BreakoutState, curr: BreakoutState) -> float:
     """
@@ -69,8 +62,8 @@ def defensive_positioning(prev: BreakoutState, curr: BreakoutState) -> float:
     """
     player_width = jnp.where(
         curr.small_paddle,
-        PLAYER_SIZE_SMALL[0],
-        PLAYER_SIZE[0]
+        BreakoutConstants.PLAYER_SIZE_SMALL[0],
+        BreakoutConstants.PLAYER_SIZE[0]
     )
     screen_center_x = 80+8 #middle = WINDOW_WIDTH // 2 + WALL_WIDTH
     # distance to mid
@@ -88,14 +81,14 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
     state = unpack(env_state)
     player_width = jnp.where(
         state.small_paddle,
-        PLAYER_SIZE_SMALL[0],
-        PLAYER_SIZE[0]
+        BreakoutConstants.PLAYER_SIZE_SMALL[0],
+        BreakoutConstants.PLAYER_SIZE[0]
     )
 
     # ball is approaching, if ball_vel_y is positive and passed the middle of the screen
     ball_approaching = jnp.logical_and(state.ball_vel_y > 0, state.ball_y > 122) 
 
-    close_to_paddle = abs(state.ball_y - PLAYER_START_Y) < player_width
+    close_to_paddle = abs(state.ball_y - BreakoutConstants.PLAYER_START_Y) < 2*player_width
 
     # if ball is approaching (after mid) -> track ball
     # if close to paddle -> return ball
@@ -115,12 +108,12 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     state = unpack(env_state)
     player_width = jnp.where(
         state.small_paddle,
-        PLAYER_SIZE_SMALL[0],
-        PLAYER_SIZE[0]
+        BreakoutConstants.PLAYER_SIZE_SMALL[0],
+        BreakoutConstants.PLAYER_SIZE[0]
     )
     # ball is approaching, if ball_vel_y is positive and passed the middle of the screen
-    ball_approaching = state.ball_vel_y > 0 and state.ball_y > 122
-    close_to_paddle = abs(state.ball_y - PLAYER_START_Y) < player_width
+    ball_approaching = jnp.logical_and(state.ball_vel_y > 0, state.ball_y > 122)
+    close_to_paddle = abs(state.ball_y - BreakoutConstants.PLAYER_START_Y) < 2*player_width
     # if ball is approaching (after mid) -> track ball
     # if close to paddle -> return ball
     # else (ball not approaching) -> recover to center

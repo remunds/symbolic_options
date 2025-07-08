@@ -53,16 +53,18 @@ def outer_make_train(config):
         from jaxatari.games.jax_breakout import JaxBreakout, BreakoutRenderer
         from jaxatari.wrappers import MultiRewardLogWrapper
         from symbolic_options.reward_functions.breakout import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
-        from jaxatari.games.mods.breakout_mods import LeftDrift
+        from jaxatari.games.mods.breakout_mods import SpeedMode, SmallPaddle, BigPaddle
 
         reward_funcs = [track_and_align, return_shot, defensive_positioning]
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train: bool = False, left_drift: bool = False):
+        def create_env(train: bool = False, left_drift: bool = False, small_paddle: bool = False):
             env = JaxBreakout(reward_funcs=reward_funcs)
             if left_drift:
-                env = LeftDrift(env)
+                env = SpeedMode(env)
+            if small_paddle:
+                env = BigPaddle(env)
             if train:
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
@@ -71,10 +73,41 @@ def outer_make_train(config):
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
-        env = create_env(True, False)
-        test_env = create_env(False, False)
-        test_env_modif = create_env(False, True) # evaluate on mod
+        env = create_env(True, False, False)
+        test_env = create_env(False, False, False)
+        test_env_modif = create_env(False, False, True) # evaluate on mod
         renderer = BreakoutRenderer()
+
+    elif config.get("ENV_NAME", None) == "Freeway":
+        from jaxatari.games.jax_freeway import JaxFreeway, FreewayRenderer
+        from jaxatari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.freeway import avoid_crash, go_forward, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
+        from jaxatari.games.mods.freeway_mods import SpeedMode, StopAllCars, AlwaysStopAllCars
+
+        reward_funcs = [avoid_crash, go_forward]
+
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, stop_all_cars: bool = False, stop_random_cars: bool = False, speed_mode: bool = False): 
+            env = JaxFreeway(reward_funcs=reward_funcs)
+            if stop_all_cars:
+                env = AlwaysStopAllCars(env)
+            if stop_random_cars:
+                env = StopAllCars(env)
+            if speed_mode:
+                env = SpeedMode(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(True, False, False, False) # train on default
+        test_env = create_env(False, False, False, False) # evaluate on default
+        test_env_modif = create_env(False, True, False, False) # evaluate on mod
+        renderer = FreewayRenderer()
 
     elif config.get("ENV_NAME", None) == "Seaquest":
         from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
