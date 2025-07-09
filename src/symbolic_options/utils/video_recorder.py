@@ -9,7 +9,7 @@ import numpy as np
 import pygame
 from jaxatari.renderers import JAXGameRenderer, PyGameRenderer
 from jaxatari.wrappers import AtariState, MultiRewardLogState as JaxtariMultiRewardLogState
-from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
+from symbolic_options.purejaxql.craftax_wrappers import ExplorationState, MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
 
 import wandb
 
@@ -136,7 +136,10 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
         states = states.atari_state
     elif isinstance(states, CraftaxMultiRewardLogEnvState):
         states = states.env_state
+
     if isinstance(states, AtariState):
+        states = states.env_state
+    elif isinstance(states, ExplorationState):
         states = states.env_state
 
     # num_states is where the first done is True

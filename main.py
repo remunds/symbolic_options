@@ -20,10 +20,12 @@ def outer_make_train(config):
     if config.get("ENV_NAME", None) == "Pong":
         from jaxatari.games.jax_pong import JaxPong, PongRenderer
         from jaxatari.wrappers import MultiRewardLogWrapper
-        from symbolic_options.reward_functions.pong import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
+        from symbolic_options.reward_functions.pong import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
         from jaxatari.games.mods.pong_mods import LazyEnemyWrapper, RandomizedEnemyWrapper
 
         reward_funcs = [track_and_align, return_shot, defensive_positioning]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
@@ -52,10 +54,12 @@ def outer_make_train(config):
     elif config.get("ENV_NAME", None) == "Breakout":
         from jaxatari.games.jax_breakout import JaxBreakout, BreakoutRenderer
         from jaxatari.wrappers import MultiRewardLogWrapper
-        from symbolic_options.reward_functions.breakout import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
+        from symbolic_options.reward_functions.breakout import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
         from jaxatari.games.mods.breakout_mods import SpeedMode, SmallPaddle, BigPaddle
 
         reward_funcs = [track_and_align, return_shot, defensive_positioning]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
@@ -81,10 +85,12 @@ def outer_make_train(config):
     elif config.get("ENV_NAME", None) == "Freeway":
         from jaxatari.games.jax_freeway import JaxFreeway, FreewayRenderer
         from jaxatari.wrappers import MultiRewardLogWrapper
-        from symbolic_options.reward_functions.freeway import avoid_crash, go_forward, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy 
+        from symbolic_options.reward_functions.freeway import avoid_crash, go_forward, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
         from jaxatari.games.mods.freeway_mods import SpeedMode, StopAllCars, AlwaysStopAllCars, StopAndGo
 
         reward_funcs = [avoid_crash, go_forward]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward] #use env_reward for all options
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
@@ -107,11 +113,11 @@ def outer_make_train(config):
             return env
         env = create_env(True, False, False, False) # train on default
         test_env = create_env(False, False, False, False) # evaluate on default
-        test_env_modif = create_env(False, False, True, False) # evaluate on mod
+        test_env_modif = create_env(False, True, False, False) # evaluate on mod
         renderer = FreewayRenderer()
 
     elif config.get("ENV_NAME", None) == "Seaquest":
-        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
+        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, env_reward
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
         from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
@@ -120,6 +126,8 @@ def outer_make_train(config):
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
         reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
@@ -143,11 +151,14 @@ def outer_make_train(config):
         test_env_modif = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
+        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
+
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
@@ -179,12 +190,14 @@ def outer_make_train(config):
         )
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper, NoNecessitiesWrapper
-        from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore
+        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper, NoNecessitiesWrapper, ExplorationMapWrapper
+        from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, env_reward
         from symbolic_options.utils.video_recorder import CraftaxClassicRenderer
 
         # reward_funcs_craftax = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
         reward_funcs = [survival_reward, combat_reward, crafting_reward, resource_collection_reward, explore]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward, env_reward, env_reward] #use env_reward for all options
         # reward_funcs = []
         # renderer = CraftaxRenderer()
         renderer = CraftaxClassicRenderer()
@@ -196,6 +209,7 @@ def outer_make_train(config):
         def create_env(env, train: bool = False, modification: bool = False):
             if modification:
                 env = NoNecessitiesWrapper(env)
+            env = ExplorationMapWrapper(env) 
             if len(reward_funcs) > 0:
                 env = MultiRewardWrapper(env, reward_funcs)
                 env = MultiRewardLogWrapper(env)

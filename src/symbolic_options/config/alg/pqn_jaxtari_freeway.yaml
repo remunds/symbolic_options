@@ -30,7 +30,7 @@ GAMMA: 0.99
 LAMBDA: 0.65
 HIDDEN_SIZE: 64
 NUM_LAYERS: 3
-STICKY_ACTIONS: True
+STICKY_ACTIONS: False
 EPISODIC_LIFE: True
 
 HIERARCHICAL: False # if False: use PQN rather than hierarchical PQN

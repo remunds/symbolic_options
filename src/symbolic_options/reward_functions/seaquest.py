@@ -1,12 +1,26 @@
 import jax
 import jax.numpy as jnp
-from jaxatari.wrappers import MultiRewardLogEnvState, AtariState
-from jaxatari.games.jax_seaquest import SeaquestState
+from jaxatari.wrappers import AtariState, MultiRewardLogState
+from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestState
+def unpack(state):
+    while not isinstance(state, SeaquestState):
+        if hasattr(state, 'atari_state'):
+            state = state.atari_state
+        elif hasattr(state, 'env_state'):
+            state = state.env_state
+        else:
+            raise ValueError("State is not a SeaquestState or does not contain a SeaquestState.")
+    return state
 
 @jax.jit
 def idle_reward(prev_state: SeaquestState, state: SeaquestState):
     # punish dying give 0.001 else
     reward = jnp.where(state.lives < prev_state.lives, -1, 0.001)
+    return reward
+
+@jax.jit
+def env_reward(prev_state: SeaquestState, state: SeaquestState):
+    reward = JaxSeaquest()._get_env_reward(prev_state, state)
     return reward
 
 @jax.jit
@@ -47,10 +61,7 @@ def llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state
     Mutually exclusive.
     Default is shooting.
     """
-    if isinstance(env_state, MultiRewardLogEnvState):
-        state = env_state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(env_state)
     # 0: fight, 1: collect, 2: go up
 
     # collect (always if divers are present) 
@@ -90,7 +101,7 @@ def llm_meta_policy_divers_default(network, meta_train_state, last_obs, env_stat
     """
     Mutually exclusive. Default is divers.
     """
-    if isinstance(env_state, MultiRewardLogEnvState):
+    if isinstance(env_state, MultiRewardLogState):
         state = env_state.env_state
     if isinstance(state, AtariState):
         state = state.env_state
@@ -132,7 +143,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestStat
 def divers_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     state = env_state
     #TODO: is there a better way to unpack?
-    if isinstance(state, MultiRewardLogEnvState):
+    if isinstance(state, MultiRewardLogState):
         state = state.env_state
     if isinstance(state, AtariState):
         state = state.env_state
@@ -177,7 +188,7 @@ def divers_default_policy(network, meta_train_state, last_obs, env_state: Seaque
 # @jax.jit
 def shoot_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     state = env_state
-    if isinstance(state, MultiRewardLogEnvState):
+    if isinstance(state, MultiRewardLogState):
         state = state.env_state
     if isinstance(state, AtariState):
         state = state.env_state

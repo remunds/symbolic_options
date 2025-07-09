@@ -16,6 +16,12 @@ def unpack(state):
             raise ValueError("State is not a PongState or does not contain a PongState.")
     return state
 
+def env_reward(prev_state: PongState, state: PongState) -> float:
+    prev_state = unpack(prev_state)
+    state = unpack(state)
+    # Compute the environment reward based on the previous and current state
+    return JaxPong()._get_reward(prev_state, state)
+
 # Multiple things:
 # 1. the q_values need to be normalized (s.t. they are comparable)
 #    -> use rewards between 0 and 1

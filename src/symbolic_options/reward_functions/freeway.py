@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import lax
 import jax
 from enum import IntEnum
-from jaxatari.games.jax_freeway import FreewayState, FreewayConstants
+from jaxatari.games.jax_freeway import FreewayState, FreewayConstants, JaxFreeway
 
 def unpack(state):
     while not isinstance(state, FreewayState):
@@ -13,6 +13,15 @@ def unpack(state):
         else:
             raise ValueError("State is not a FreewayState or does not contain a FreewayState.")
     return state
+
+def env_reward(prev_state: FreewayState, state: FreewayState) -> float:
+    """
+    Compute the environment reward based on the previous and current state.
+    """
+    prev_state = unpack(prev_state)
+    state = unpack(state)
+    # Compute the environment reward based on the previous and current state
+    return JaxFreeway()._get_reward(prev_state, state)
 
 def avoid_crash(prev: FreewayState, curr: FreewayState) -> float:
     # Check for collisions

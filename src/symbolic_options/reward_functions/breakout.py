@@ -14,6 +14,15 @@ def unpack(state):
             raise ValueError("State is not a BreakoutState or does not contain a BreakoutState.")
     return state
 
+def env_reward(prev_state: BreakoutState, state: BreakoutState) -> float:
+    """
+    Compute the environment reward based on the previous and current state.
+    """
+    prev_state = unpack(prev_state)
+    state = unpack(state)
+    # Compute the environment reward based on the previous and current state
+    return JaxBreakout()._get_reward(prev_state, state)
+
 def track_and_align(prev: BreakoutState, curr: BreakoutState) -> float:
     """
     Reward ∈ [0, 1] based on reduction in horizontal distance to ball.

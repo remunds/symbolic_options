@@ -4,8 +4,30 @@ import jax.numpy as jnp
 from craftax.craftax_classic.envs.craftax_state import EnvState as CraftaxState, Inventory
 from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState
 
+def unpack(state):
+    while not isinstance(state, CraftaxState):
+            state = state.env_state
+    return state
+
+def env_reward(prev_state: CraftaxState, state: CraftaxState) -> float:
+    """
+    Compute the environment reward based on the previous and current state.
+    """
+    prev_state = unpack(prev_state)
+    state = unpack(state)
+    # Compute the environment reward based on the previous and current state
+    achievement_reward = (
+        prev_state.achievements.astype(jnp.float32).sum()
+        - state.achievements.astype(jnp.float32).sum() 
+    )
+    health_reward = (prev_state.player_health - state.player_health) * 0.1
+    reward = achievement_reward + health_reward
+    return reward 
+
 @jax.jit
 def survival_reward(prev_state: CraftaxState, state: CraftaxState):
+    prev_state = unpack(prev_state)
+    state = unpack(state)
     # this works great
     # Reward for survival management (player needs)
     health_reward = state.player_health - prev_state.player_health
@@ -16,6 +38,8 @@ def survival_reward(prev_state: CraftaxState, state: CraftaxState):
 
 @jax.jit
 def combat_reward(prev_state: CraftaxState, state: CraftaxState):
+    prev_state = unpack(prev_state)
+    state = unpack(state)
     # this works great
     # Reward for combat engagement (killing mobs)
     # killed_a_mob = jnp.where(prev_state.zombies.mask.sum() > state.zombies.mask.sum(), 1, 0)
@@ -30,6 +54,8 @@ def combat_reward(prev_state: CraftaxState, state: CraftaxState):
 
 @jax.jit
 def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
+    prev_state = unpack(prev_state)
+    state = unpack(state)
     # Reward for resource collection (wood, stone, coal, iron, diamond)
     # Limit the rewards based on the already collected resources 
     wood_reward = state.inventory.wood - prev_state.inventory.wood
@@ -70,6 +96,8 @@ def should_craft_sword(inv: Inventory):
 
 @jax.jit
 def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
+    prev_state = unpack(prev_state)
+    state = unpack(state)
     # Reward for crafting items (pickaxe1 wood, pickaxe2 stone, ...)
     wood_pick_rew = jnp.where(prev_state.inventory.wood_pickaxe < state.inventory.wood_pickaxe, 1, 0)
     wood_pick_rew = jnp.where(should_craft_pickaxe(prev_state.inventory)[0], wood_pick_rew, 0)
@@ -106,9 +134,9 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
     """
     Mutually exclusive.
     """
-    state = env_state
-    if isinstance(env_state, MultiRewardLogEnvState): 
-        state = env_state.env_state
+    state = unpack(env_state)
+    # if isinstance(env_state, MultiRewardLogEnvState): 
+    #     state = env_state.env_state
 
     # Skill indices mapping
     SKILLS = {
