@@ -33,32 +33,33 @@ def avoid_crash(prev: FreewayState, curr: FreewayState) -> float:
     # Check if any collision occurred
     collision_occurred = jnp.any(collisions, axis=-1)
     # movement = curr.chicken_y < prev.chicken_y
+    return jnp.where(collision_occurred, -1.0, 0.0)
 
-    # maximize distance to closest car 
-    # cars: [N, 2] (x, y) coordinates of cars
-    distance_y = jnp.abs(curr.chicken_y - curr.cars[..., 1])
-    distance_x = jnp.abs(FreewayConstants().chicken_x - curr.cars[..., 0])
-    total_distance = jnp.sqrt(distance_x**2 + distance_y**2)
-    min_distance = jnp.min(total_distance, axis=-1) # over all cars
+    # # maximize distance to closest car 
+    # # cars: [N, 2] (x, y) coordinates of cars
+    # distance_y = jnp.abs(curr.chicken_y - curr.cars[..., 1])
+    # distance_x = jnp.abs(FreewayConstants().chicken_x - curr.cars[..., 0])
+    # total_distance = jnp.sqrt(distance_x**2 + distance_y**2)
+    # min_distance = jnp.min(total_distance, axis=-1) # over all cars
 
-    # prev_distance_y = jnp.abs(prev.chicken_y - prev.cars[..., 1])
-    # prev_distance_x = jnp.abs(FreewayConstants().chicken_x - prev.cars[..., 0])
-    # prev_total_distance = jnp.sqrt(prev_distance_x**2 + prev_distance_y**2)
-    # prev_min_distance = jnp.min(prev_total_distance, axis=-1) # over all cars
+    # # prev_distance_y = jnp.abs(prev.chicken_y - prev.cars[..., 1])
+    # # prev_distance_x = jnp.abs(FreewayConstants().chicken_x - prev.cars[..., 0])
+    # # prev_total_distance = jnp.sqrt(prev_distance_x**2 + prev_distance_y**2)
+    # # prev_min_distance = jnp.min(prev_total_distance, axis=-1) # over all cars
 
-    # reward = jnp.where(
-    #     min_distance > prev_min_distance,
-    #     1.0, # moved away from car
-    #     0.0
-    # )
-    # env_reward = curr.score - prev.score
-    # return env_reward + reward/10
+    # # reward = jnp.where(
+    # #     min_distance > prev_min_distance,
+    # #     1.0, # moved away from car
+    # #     0.0
+    # # )
+    # # env_reward = curr.score - prev.score
+    # # return env_reward + reward/10
 
-    # chatgpt reward: 1-exp(-d/theta)
-    # reward = 1-jnp.exp(-min_distance / 0.1)
-    reward = 1-jnp.exp(-min_distance/1000)
-    reward = jnp.where(collision_occurred, -10.0, reward)  # penalize collisions
-    return reward
+    # # chatgpt reward: 1-exp(-d/theta)
+    # # reward = 1-jnp.exp(-min_distance / 0.1)
+    # reward = 1-jnp.exp(-min_distance/1000)
+    # reward = jnp.where(collision_occurred, -10.0, reward)  # penalize collisions
+    # return reward
 
 def go_forward(prev: FreewayState, curr: FreewayState) -> float:
     # reward for moving forward
@@ -76,13 +77,13 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
     """
     state = unpack(env_state)
 
-    #TODO: activate avoid_crash based on current and upcoming lane, not total distance
+    #activate avoid_crash based on current and upcoming lane, not total distance
 
     distance_y = jnp.abs(jnp.expand_dims(state.chicken_y, axis=1) - state.cars[..., 1])
     cars_in_front = state.cars[..., 1] < (jnp.expand_dims(state.chicken_y, axis=1) + FreewayConstants().lane_spacing)
     cars_in_close_front = jnp.logical_and(cars_in_front, distance_y < FreewayConstants().lane_spacing * 2)
     distance_x = jnp.abs(FreewayConstants().chicken_x - state.cars[..., 0])
-    # total_distance = jnp.sqrt(distance_x**2 + distance_y**2)
+    total_distance = jnp.sqrt(distance_x**2 + distance_y**2)
     x_distance_filtered = jnp.where(
         cars_in_close_front,
         distance_x,
@@ -90,7 +91,8 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
     )
     min_x_distance = jnp.min(x_distance_filtered, axis=-1)  # over all cars
 
-    car_close = min_x_distance < FreewayConstants().chicken_width * 3
+    # car_close = min_x_distance < FreewayConstants().chicken_width * 4
+    car_close = (total_distance < FreewayConstants().chicken_width * 3).any(axis=-1)  # check if any car is close in any lane
 
     qvals = jnp.where(
         car_close,
