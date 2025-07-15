@@ -85,8 +85,6 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
 
-    config["NUM_AGENTS"] = len(env.reward_funcs)
-
     rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
     rtpt.start()
 
@@ -166,7 +164,9 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
             )
             return train_state
 
-        num_agents = config.get("NUM_AGENTS", 1)
+        num_agents = config.get("NUM_AGENTS", len(env.reward_funcs))
+        if num_agents == 0:
+            num_agents = 1
         if config.get("META_SHAPED_REWARD", False):
             num_agents -= 1 # remove one if shaped reward is given
 
@@ -497,7 +497,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
             meta_policy_string = config.get("META_POLICY", "llm")
             meta_policy_can_learn = (meta_policy_string == "learned") or (meta_policy_string == "combined")
 
-            meta_reward_idx = num_agents
+            meta_reward_idx = -1 # see jaxtari version for explanation
             def do_update(_):
                 return _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
 

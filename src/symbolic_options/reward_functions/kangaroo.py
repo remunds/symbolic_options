@@ -331,3 +331,48 @@ def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state
     learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
     combined_q_vals = conditional_q_vals * learned_q_vals
     return llm_q_vals, combined_q_vals
+
+# external rewards for evaluation
+
+def reached_platform_level(state: KangarooState, prev_state: KangarooState) -> jnp.ndarray:
+    # return +1 for each new platform height reached
+    player_bottom_y = state.player.y + state.player.height
+    prev_player_bottom_y = prev_state.player.y + prev_state.player.height
+    level_constants = JaxKangaroo()._get_level_constants(state.current_level)
+    platform_positions_y = level_constants.platform_positions[..., 1]
+    filter_first = jnp.where(platform_positions_y >= 172, 0, 1) # bottom platform is at 172
+
+    player_over_platform = player_bottom_y >= platform_positions_y
+    prev_player_over_platform = prev_player_bottom_y >= platform_positions_y
+    reached_platforms = jnp.sum(jnp.logical_and(
+        player_over_platform,
+        filter_first,
+    ), axis=-1)
+    prev_reached_platforms = jnp.sum(jnp.logical_and(
+        prev_player_over_platform,
+        filter_first,
+    ), axis=-1)
+
+    # new reached
+    new_reached = jnp.where(reached_platforms > prev_reached_platforms, 1, 0)
+    return new_reached.astype(jnp.float32)
+
+def enemies_killed(state: KangarooState, prev_state: KangarooState) -> jnp.ndarray:
+    # return +1 for each enemy killed (one fewer monkeys)
+    monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) < jnp.count_nonzero(prev_state.level.monkey_states, axis=-1), 1, 0)
+    filter_crashed = jnp.logical_or(
+        state.player.is_crashing,
+        prev_state.player.is_crashing,
+    )
+    return jnp.where(filter_crashed, 0, monkey_reward).astype(jnp.float32) 
+
+def fruits_collected(state: KangarooState, prev_state: KangarooState) -> jnp.ndarray:
+    # return +1 for each fruit collected
+    prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
+    new_active = jnp.sum(state.level.fruit_actives, axis=-1)
+    filter_crashed = jnp.logical_or(
+        state.player.is_crashing,
+        prev_state.player.is_crashing,
+    )
+    fruit_collected = jnp.where(new_active < prev_active, 1, 0)
+    return jnp.where(filter_crashed, 0, fruit_collected).astype(jnp.float32)

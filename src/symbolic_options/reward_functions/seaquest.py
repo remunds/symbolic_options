@@ -40,7 +40,6 @@ def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
     reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
 
-
 @jax.jit
 def upward_reward(prev_state: SeaquestState, state: SeaquestState):
     # return 1 if player is replenishing oxygen 
@@ -247,3 +246,59 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Seaques
     learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
     combined_q_vals = conditional_q_vals * learned_q_vals
     return combined_q_vals
+
+
+# External rewards for evaluating alignment with goals
+
+@jax.jit
+def total_rescued(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player is at surface with 6 divers
+    reward = jnp.where(
+        state.successful_rescues > prev_state.successful_rescues,
+        1.0,
+        0.0
+    )
+    return reward 
+
+@jax.jit
+def total_collected(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player is at surface with 6 divers
+    reward = jnp.where(
+        state.divers_collected > prev_state.divers_collected,
+        1.0,
+        0.0
+    )
+    return reward 
+
+@jax.jit
+def total_shot(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player is at surface with 6 divers
+    point_diff = state.score - prev_state.score
+    # shark/sub kills are between 20 and 90 points
+    # (rescueing is >50*6==300 points)
+    enemy_killed = jnp.logical_and(
+        point_diff >= 20,
+        point_diff <= 90
+    )
+    reward = jnp.where(
+        enemy_killed,
+        1.0,
+        0.0
+    )
+    return reward
+
+@jax.jit
+def total_surface_without_dying(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player reaches surface and doesn't die (at least one diver)
+    at_surface = lambda s: s.player_y == 46
+    newly_surfaced = jnp.logical_and(
+        at_surface(state),
+        jnp.logical_not(at_surface(prev_state))
+    )
+    has_diver = lambda s: s.divers_collected > 0 
+    reward = jnp.where(
+        jnp.logical_and(newly_surfaced, has_diver(prev_state)),
+        1.0,
+        0.0
+    )
+    return reward

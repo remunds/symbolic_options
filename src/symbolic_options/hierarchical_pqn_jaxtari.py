@@ -88,13 +88,11 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
-    config["NUM_AGENTS"] = len(env.reward_funcs)
     config["OBS_SHAPE"] = env.observation_space().shape
     config["NUM_ACTIONS"] = env.action_space().n
 
     rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
     rtpt.start()
-
 
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
@@ -203,7 +201,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             )
             return train_state
 
-        num_agents = config.get("NUM_AGENTS", 1)
+        num_agents = config.get("NUM_AGENTS", len(env.reward_funcs))
+        if num_agents == 0:
+            num_agents = 1
         if config.get("META_SHAPED_REWARD", False):
             num_agents -= 1 # remove one if shaped reward is given
 
@@ -529,10 +529,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             
             meta_policy_string = config.get("META_POLICY", "llm")
             if meta_policy_string == "learned" or meta_policy_string == "combined":
-                # meta_reward_idx = num_agents # num_agents reward is shaped or env reward
-                meta_reward_idx = num_agents # num_agents reward is shaped or env reward
-                # note that the reward_idx works, because we add the env_reward to the end of all_rewards
-                # so we either select the shaped reward or the env reward
+                meta_reward_idx = -1 
+                # NOTE: currently, this is always the last -> env_reward
+                # could previously also be shaped, but not anymore due to external rewards for evaluation
                 if not (config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False)):
                     metrics_meta, meta_train_state = _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
                     metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})

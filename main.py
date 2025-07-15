@@ -117,7 +117,7 @@ def outer_make_train(config):
         renderer = FreewayRenderer()
 
     elif config.get("ENV_NAME", None) == "Seaquest":
-        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, env_reward
+        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying 
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
         from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
@@ -125,7 +125,7 @@ def outer_make_train(config):
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
-        reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward]
+        reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
         if config.get("NO_REWARDS", False):
             reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
@@ -151,12 +151,12 @@ def outer_make_train(config):
         test_env_modif = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward
+        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
 
-        reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
+        reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward, reached_platform_level, enemies_killed, fruits_collected] 
         if config.get("NO_REWARDS", False):
             reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
 
