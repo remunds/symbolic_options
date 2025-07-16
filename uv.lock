@@ -491,6 +491,24 @@ wheels = [
 ]
 
 [[package]]
+name = "flashbax"
+version = "0.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "chex" },
+    { name = "flax" },
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "numpy" },
+    { name = "tensorstore" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/a2/fddfe1f119b964b45d1e9ac557d3e921f393e4369417d0a98803163c705b/flashbax-0.1.3.tar.gz", hash = "sha256:3792972973169d455188451dd3f93a0ab37004bb122bb256a323927daaca9a3e", size = 56444, upload-time = "2025-03-27T09:50:45.513Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/f2/3ec1ebf403bd1593c44a0e42dbd0935a03bffb090259a3e88699d210a9f0/flashbax-0.1.3-py3-none-any.whl", hash = "sha256:798b0056dd0f525269ad9689a402dd0a515db7cb6976c761aa95004ff37e9697", size = 82386, upload-time = "2025-03-27T09:50:44.004Z" },
+]
+
+[[package]]
 name = "flax"
 version = "0.10.6"
 source = { registry = "https://pypi.org/simple" }
@@ -796,7 +814,7 @@ with-cuda = [
 [[package]]
 name = "jaxatari"
 version = "0.1.0"
-source = { git = "https://github.com/k4ntz/JAXAtari?rev=98905f716d3e63a0c4513757bac53084f5ea23c4#98905f716d3e63a0c4513757bac53084f5ea23c4" }
+source = { git = "https://github.com/k4ntz/JAXAtari?rev=8cfde915287006656fca23426c41e14a172f8b45#8cfde915287006656fca23426c41e14a172f8b45" }
 dependencies = [
     { name = "absl-py" },
     { name = "ale-py" },
@@ -2249,6 +2267,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "craftax" },
+    { name = "flashbax" },
     { name = "flax" },
     { name = "gymnax" },
     { name = "hydra-core" },
@@ -2264,11 +2283,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "craftax", specifier = ">=1.4.5" },
+    { name = "flashbax", specifier = ">=0.1.3" },
     { name = "flax", specifier = ">=0.10.4" },
     { name = "gymnax", specifier = ">=0.0.8" },
     { name = "hydra-core", specifier = ">=1.3.2" },
     { name = "jax", extras = ["cuda12"], specifier = ">=0.6.0" },
-    { name = "jaxatari", git = "https://github.com/k4ntz/JAXAtari?rev=98905f716d3e63a0c4513757bac53084f5ea23c4" },
+    { name = "jaxatari", git = "https://github.com/k4ntz/JAXAtari?rev=8cfde915287006656fca23426c41e14a172f8b45" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "optax", specifier = ">=0.2.4" },
     { name = "rtpt", specifier = ">=0.0.4" },

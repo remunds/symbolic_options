@@ -65,16 +65,30 @@ def env_reward(prev_state: KangarooState, state: KangarooState) -> float:
 
 
 #     return ladder_reward + ladder_up_reward + dying_reward
+# @jax.jit
+# def navigate_reward(prev_state: KangarooState, state: KangarooState):
+#     # reward going up (e.g. ladder)  - does not work with newest kangaroo version
+#     reward = jax.lax.cond(
+#         state.player.y > 160,
+#         lambda: -0.3,  # if player is below 160, return -0.1
+#         lambda: jax.lax.cond(
+#             state.player.is_crashing,
+#             lambda: 0.,  # if player is crashing, return 0
+#             lambda: jnp.clip(prev_state.player.y - state.player.y, -9, 9).astype(jnp.float32)  # else return the difference in y position, clipped between -9 and 9
+#         ),
+#     )
+#     return reward 
+
 @jax.jit
 def navigate_reward(prev_state: KangarooState, state: KangarooState):
     # reward going up (e.g. ladder) 
     reward = jax.lax.cond(
         state.player.y > 160,
-        lambda: -0.3,  # if player is below 160, return -0.1
+        lambda: 0., 
         lambda: jax.lax.cond(
             state.player.is_crashing,
             lambda: 0.,  # if player is crashing, return 0
-            lambda: jnp.clip(prev_state.player.y - state.player.y, -9, 9).astype(jnp.float32)  # else return the difference in y position, clipped between -9 and 9
+            lambda: jnp.astype(prev_state.player.y - state.player.y, jnp.float32)  # else return the difference in y position
         ),
     )
     return reward 

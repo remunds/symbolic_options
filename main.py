@@ -167,9 +167,9 @@ def outer_make_train(config):
             if no_enemies:
                 env = DisableThreadsWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, first_fire=False)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, first_fire=False)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)

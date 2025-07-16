@@ -146,7 +146,7 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
     num_states = jnp.argmax(dones)
     # or len of the first array of the states pytree
     if num_states == 0:
-        num_states = len(states[0])
+        num_states = len(states[-1])
 
     # select every 4th frame (and only the first num_states)
     # states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states][::4], states)

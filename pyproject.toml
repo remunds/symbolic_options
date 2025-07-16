@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "craftax>=1.4.5",
+    "flashbax>=0.1.3",
     "flax>=0.10.4",
     "gymnax>=0.0.8",
     "hydra-core>=1.3.2",
@@ -23,5 +24,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv.sources]
-#jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "da3ee670f0e904313ca44078e21006bc49a012b9" }
-jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "98905f716d3e63a0c4513757bac53084f5ea23c4" }
+jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "8cfde915287006656fca23426c41e14a172f8b45" }

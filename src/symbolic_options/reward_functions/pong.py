@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import lax
 import jax
 from enum import IntEnum
-from jaxatari.games.jax_pong import PongState, PLAYER_X, BALL_START_Y, JaxPong
+from jaxatari.games.jax_pong import PongState, PongConstants, JaxPong
 
 GAMMA = 0.99 
 
