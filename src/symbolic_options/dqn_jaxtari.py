@@ -58,7 +58,7 @@ def make_train(config):
     global rtpt
 
     config["NUM_UPDATES"] = config["TOTAL_TIMESTEPS"] // config["NUM_ENVS"]
-    rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
+    rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=f"{config['ALG_NAME']}_{config['ENV_NAME']}", max_iterations=config["NUM_UPDATES"])
     rtpt.start()
 
     if config["ENV_NAME"] == "Seaquest":
@@ -108,6 +108,30 @@ def make_train(config):
         eval_env = create_env(False, False)
         modif_env = create_env(False, True)
         renderer = KangarooRenderer()
+
+    elif config["ENV_NAME"] == "Pong":
+        from jaxatari.games.jax_pong import JaxPong, PongRenderer
+        from jaxatari.games.mods.pong_mods import LazyEnemyWrapper
+
+        reward_funcs = [] 
+
+        def create_env(train=False, lazy_enemy: bool = False):
+            env = JaxPong(reward_funcs=reward_funcs)
+            if lazy_enemy:
+                env = LazyEnemyWrapper(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=True, episodic_life=True)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        # env = create_env(True, False)
+        env = create_env(False, False)
+        eval_env = create_env(False, False)
+        modif_env = create_env(False, True)
+        renderer = PongRenderer()
 
 
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
@@ -209,8 +233,8 @@ def make_train(config):
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = jax.lax.cond(
                 modif,
-                lambda _: vmap_eval_reset(config["TEST_NUM_ENVS"])(_rng),
                 lambda _: vmap_modif_reset(config["TEST_NUM_ENVS"])(_rng),
+                lambda _: vmap_eval_reset(config["TEST_NUM_ENVS"])(_rng),
                 operand=None
             )
 
@@ -221,8 +245,8 @@ def make_train(config):
                 action = jnp.argmax(q_vals, axis=-1) # no exploration during testing
                 obs, env_state, reward, done, info = jax.lax.cond(
                     modif,
-                    lambda _: vmap_eval_step(env_state, action),
                     lambda _: vmap_modif_step(env_state, action),
+                    lambda _: vmap_eval_step(env_state, action),
                     operand=None
                 )
                 runner_state = (env_state, obs, rng)
@@ -376,8 +400,8 @@ def make_train(config):
             if config.get("WANDB_MODE", "disabled") == "online":
 
                 def callback(metrics):
-                    # if metrics["timesteps"] % 100 == 0:
-                    wandb.log(metrics)
+                    if metrics["timesteps"] % 100 == 0:
+                        wandb.log(metrics)
 
                 jax.debug.callback(callback, metrics)
 
@@ -401,22 +425,25 @@ def make_train(config):
 def main():
     # clean_rl HP's
     config = {
-        "NUM_ENVS": 1,
-        "BUFFER_SIZE": 100_000,
-        "BUFFER_BATCH_SIZE": 32,
+        "NUM_ENVS": 128,
+        "BUFFER_SIZE": 1_000_000,
+        "BUFFER_BATCH_SIZE": 1024,
         # "BUFFER_BATCH_SIZE": 128,
-        "TOTAL_TIMESTEPS": 1e7,
+        "TOTAL_TIMESTEPS": 5e7,
         "EPSILON_START": 1.0,
         "EPSILON_FINISH": 0.01,
-        "EPSILON_ANNEAL_TIME": 25e4, #in steps (not frames) 0.1 (==250_000steps)
+        # "EPSILON_FINISH": 0.03,
+        # "EPSILON_ANNEAL_TIME": 25e4, #in steps (not frames) 0.1 (==250_000steps)
+        "EPSILON_ANNEAL_TIME": 5e6, #in steps (not frames) 0.1 (==250_000steps)
         "TARGET_UPDATE_INTERVAL": 1000,
-        "LR": 1e-4,
+        "LR": 2.5e-4,
+        # "LR": 1e-4,
         "LEARNING_STARTS": 80_000,
         "TRAINING_INTERVAL": 4,
         "LR_LINEAR_DECAY": False,
         "GAMMA": 0.99,
         "TAU": 1.0,
-        "ENV_NAME": "Seaquest",
+        "ENV_NAME": "Pong",
         "SEED": 0,
         "NUM_SEEDS": 1,
         "WANDB_MODE": "online",  # set to online to activate wandb
@@ -424,8 +451,8 @@ def main():
         "PROJECT": "",
         "NAME_INITIALS": "RE",
         "ALG_NAME": "DQN",
-        "TEST_INTERVAL": 100_000,
-        "TEST_NUM_ENVS": 10,
+        "TEST_INTERVAL": 500_000,
+        "TEST_NUM_ENVS": 128,
         "TEST_NUM_STEPS": 10_000,
         "RECORD_VIDEO": True,  # Whether to record video or not
     }
