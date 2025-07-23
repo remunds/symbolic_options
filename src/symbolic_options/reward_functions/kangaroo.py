@@ -47,51 +47,43 @@ def env_reward(prev_state: KangarooState, state: KangarooState) -> float:
 #     reward = 0.1*ladder_reward + ladder_up_reward + level_up_reward 
 #     return reward
 
-# @jax.jit
-# def navigate_reward(prev_state: KangarooState, state: KangarooState):
-#     # navigate to and up ladder
-#     dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
-#     dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
-#     dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
+@jax.jit
+def navigate_reward(prev_state: KangarooState, state: KangarooState):
+    # navigate to and up ladder
+    dx = jnp.abs(state.level.ladder_positions[..., 0] - state.player.x)
+    dy = jnp.abs(state.level.ladder_positions[..., 1] - state.player.y)
+    dx_prev = jnp.abs(state.level.ladder_positions[..., 0] - prev_state.player.x)
 
-#     # find ladder on current level (closest y)
-#     closest_idx = jnp.argmin(dy) 
-#     x_diff = dx[closest_idx] - dx_prev[closest_idx]
-#     ladder_reward = -(x_diff) # reward for getting closer to ladder
+    # find ladder on current level (closest y)
+    closest_idx = jnp.argmin(dy) 
+    x_diff = dx[closest_idx] - dx_prev[closest_idx]
+    ladder_reward = -(x_diff) # reward for getting closer to ladder
 
-#     # reward going up (e.g. ladder) 
-#     ladder_up_reward = -3*(state.player.y - prev_state.player.y)
-#     dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
+    # reward going up (e.g. ladder) 
+    # ladder_up_reward = -3*(state.player.y - prev_state.player.y)
+    # reward reaching new platform
+    ladder_up_reward = reached_platform_level(prev_state, state)*10 
+    # dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0)
 
 
-#     return ladder_reward + ladder_up_reward + dying_reward
+    return ladder_reward + ladder_up_reward #+ dying_reward
+
 # @jax.jit
 # def navigate_reward(prev_state: KangarooState, state: KangarooState):
 #     # reward going up (e.g. ladder)  - does not work with newest kangaroo version
-#     reward = jax.lax.cond(
-#         state.player.y > 160,
-#         lambda: -0.3,  # if player is below 160, return -0.1
-#         lambda: jax.lax.cond(
-#             state.player.is_crashing,
-#             lambda: 0.,  # if player is crashing, return 0
-#             lambda: jnp.clip(prev_state.player.y - state.player.y, -9, 9).astype(jnp.float32)  # else return the difference in y position, clipped between -9 and 9
-#         ),
-#     )
+#     # reward = jax.lax.cond(
+#     #     state.player.y > 160,
+#     #     lambda: -0.3,  # if player is below 160, return -0.1
+#     #     lambda: jax.lax.cond(
+#     #         state.player.is_crashing,
+#     #         lambda: 0.,  # if player is crashing, return 0
+#     #         lambda: jnp.clip(prev_state.player.y - state.player.y, -9, 9).astype(jnp.float32)  # else return the difference in y position, clipped between -9 and 9
+#     #     ),
+#     # )
+#     reward = -(state.player.y - prev_state.player.y)
+#     # went 5 down: 45 -> 50 () (50 - 45 = 5, so reward is -5)
+#     # went 5 up: 50 -> 45 (45 - 50 = -5, so reward is +5)
 #     return reward 
-
-@jax.jit
-def navigate_reward(prev_state: KangarooState, state: KangarooState):
-    # reward going up (e.g. ladder) 
-    reward = jax.lax.cond(
-        state.player.y > 160,
-        lambda: 0., 
-        lambda: jax.lax.cond(
-            state.player.is_crashing,
-            lambda: 0.,  # if player is crashing, return 0
-            lambda: jnp.astype(prev_state.player.y - state.player.y, jnp.float32)  # else return the difference in y position
-        ),
-    )
-    return reward 
 
 # @jax.jit
 # def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):
@@ -103,62 +95,69 @@ def navigate_reward(prev_state: KangarooState, state: KangarooState):
 
 @jax.jit
 def handle_enemies_reward(prev_state: KangarooState, state: KangarooState):
-    monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) < jnp.count_nonzero(prev_state.level.monkey_states, axis=-1), 1, 0)
-    # punish dying
-    dying_reward = jnp.where(state.lives < prev_state.lives, -1, 0)
+    monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) < jnp.count_nonzero(prev_state.level.monkey_states, axis=-1), 3, 0)
+    # punish dying / reward staying alive
+    dying_reward = jnp.where(state.lives < prev_state.lives, -10, 0.01)
+    # alive_reward = jnp.where(state.player.is_crashing, 0, 0.01)
 
     # level_up_reward = jnp.where(prev_state.current_level != state.current_level, 300, 0)
-    reward = monkey_reward + dying_reward# + level_up_reward
-    return reward 
+    reward = monkey_reward + dying_reward #+ alive_reward # + level_up_reward
+    return reward
 
+# Until now: best was just sparse reward, with 0 when crashed.
 @jax.jit
 def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
+    # sparse reward
     prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
     new_active = jnp.sum(state.level.fruit_actives, axis=-1)
-    reward = jnp.where(new_active < prev_active, 1, 0)
-    # level_up_reward = jnp.where(prev_state.current_level != state.current_level, 300, 0)
+    reward = jnp.where(new_active < prev_active, 100, -0.001)
+    # filter
+    filter_crashed = jnp.logical_or(
+        state.player.is_crashing,
+        prev_state.player.is_crashing,
+    )
+    reward = jnp.where(filter_crashed, -0.01, reward)
     return reward #+ level_up_reward
 
 # @jax.jit
-# def collect_fruits_reward(prev_state: KangarooState, state: KangarooState):
-#     # compute distance from fruits to player
-#     dx = jnp.abs(state.level.fruit_positions[..., 0] - state.player.x)
-#     dy = jnp.abs(state.level.fruit_positions[..., 1] - state.player.y) #(128, 3)
-#     dx_prev = jnp.abs(state.level.fruit_positions[..., 0] - prev_state.player.x) #(128, 3)
-#     dy_prev = jnp.abs(state.level.fruit_positions[..., 1] - prev_state.player.y) #(128, 3)
-#     # set distance of inactive fruits to inf
-#     dx = jnp.where(state.level.fruit_actives != 0, dx, jnp.inf)
-#     dy = jnp.where(state.level.fruit_actives != 0, dy, jnp.inf)
-
+# def collect_fruits_reward(prev_state, state):
 #     # find closest fruit (closest y)
-#     closest_idx = jnp.argmin(dy)
-#     x_diff = dx[closest_idx] - dx_prev[closest_idx]
-#     y_diff = dy[closest_idx] - dy_prev[closest_idx]
-#     # reward for getting closer to fruit
-#     fruit_reward = -((x_diff + y_diff) / 2) # reward for getting closer to fruit
-#     # if closest fruit is inactive, set reward to 0 (only if all fruits are inactive)
-#     fruit_reward = jnp.where(state.level.fruit_actives[closest_idx] != 0, fruit_reward, 0)
+#     dy = jnp.abs(state.level.fruit_positions[..., 1] - state.player.y) #(128, 3)
+#     dy = jnp.where(state.level.fruit_actives != 0, dy, jnp.inf)
+#     prev_dy = jnp.abs(prev_state.level.fruit_positions[..., 1] - prev_state.player.y) #(128, 3)
+#     prev_dy = jnp.where(prev_state.level.fruit_actives != 0, prev_dy, jnp.inf)
 
-#     # reward for ringing bell (player.x and y are the same as bell.x and y; and bell_timer == 0)
-#     dx = jnp.abs(state.level.bell_position[..., 0] - state.player.x) #(128, 1)
-#     dy = jnp.abs(state.level.bell_position[..., 1] - state.player.y)
-#     dx_prev = jnp.abs(state.level.bell_position[..., 0] - prev_state.player.x) #(128, 1)
-#     dy_prev = jnp.abs(state.level.bell_position[..., 1] - prev_state.player.y)
+#     dx = jnp.abs(state.level.fruit_positions[..., 0] - state.player.x) #(128, 3)
+#     dx = jnp.where(state.level.fruit_actives != 0, dx, jnp.inf)
+#     prev_dx = jnp.abs(prev_state.level.fruit_positions[..., 0] - prev_state.player.x) #(128, 3)
+#     prev_dx = jnp.where(prev_state.level.fruit_actives != 0, prev_dx, jnp.inf)
+#     # closest_idx = jnp.argmin(dy)
+#     closest_idx = jnp.argmin(prev_dy)
+#     diff_x = dx[closest_idx] - prev_dx[closest_idx]
+#     diff_y = dy[closest_idx] - prev_dy[closest_idx]
+#     # fruit_reward = -(diff_x + diff_y) # reward for getting closer to fruit 
+#     fruit_reward = jnp.where(
+#         jnp.logical_or(dy[closest_idx] < prev_dy[closest_idx], dx[closest_idx] < prev_dx[closest_idx]),
+#         1,  # reward for getting closer to fruit
+#         jnp.where(
+#             jnp.logical_and(dy[closest_idx] == prev_dy[closest_idx], dx[closest_idx] == prev_dx[closest_idx]),
+#             -0.01,  # no change in distance: small penalty
+#             -10, # going further away from fruit
+#         )
+#     )
 
-#     # set distance of inactive bells to inf
-#     x_diff = dx - dx_prev
-#     y_diff = dy - dy_prev
-#     bell_reward = -((x_diff + y_diff) / 8) # reward for getting closer to bell
-#     # bell reward should be smaller than fruit reward
-#     # if closest bell is inactive, set reward to 0 
-#     bell_reward = jnp.where(state.level.bell_timer == 0, bell_reward, 0)
+#     # bonus for actually collecting fruit
+#     prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
+#     new_active = jnp.sum(state.level.fruit_actives, axis=-1)
+#     fruit_reward = jnp.where(new_active < prev_active, 500, fruit_reward)
+#     # if player is crashing, return 0
+#     filter_crashed = jnp.logical_or(
+#         state.player.is_crashing,
+#         prev_state.player.is_crashing,
+#     )
+#     fruit_reward = jnp.where(filter_crashed, -1, fruit_reward)
 
-#     # # punish dying
-#     # dying_reward = jnp.where(state.lives < prev_state.lives, -30, 0)
-#     # combine rewards
-#     reward = fruit_reward + bell_reward #+ dying_reward
-
-#     return reward
+#     return fruit_reward
 
 # @jax.jit
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooState):
@@ -172,7 +171,8 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     # default is navigation
 
     # if fruit or bell is close, collect fruit/activate bell
-    max_fruit_dist_sq = 35 ** 2
+    max_fruit_dist_sq = 40 ** 2
+    # max_fruit_dist_sq = 35 ** 2
     fruit_mask = jnp.where(state.level.fruit_actives != 0, 1, 0) #(128, 3)
     dx = state.level.fruit_positions[..., 0] - state.player.x[:, None] #(128, 3)
     dy = state.level.fruit_positions[..., 1] - state.player.y[:, None] #(128, 3)
@@ -199,6 +199,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
 
     # if enemy is close, handle enemies
     danger_dist_sq = 50 ** 2
+    # danger_dist_sq = 35 ** 2
     active_mask = jnp.where(state.level.monkey_states != 0, 1, 0) #(128, 4)
 
     dx = state.level.monkey_positions[..., 0] - state.player.x[:, None] #(128, 4)
@@ -348,16 +349,16 @@ def combined_meta_policy_explicit(network, meta_train_state, last_obs, env_state
 
 # external rewards for evaluation
 
-def reached_platform_level(state: KangarooState, prev_state: KangarooState) -> jnp.ndarray:
+def reached_platform_level(prev_state, state) -> jnp.ndarray:
     # return +1 for each new platform height reached
     player_bottom_y = state.player.y + state.player.height
     prev_player_bottom_y = prev_state.player.y + prev_state.player.height
     level_constants = JaxKangaroo()._get_level_constants(state.current_level)
     platform_positions_y = level_constants.platform_positions[..., 1]
     filter_first = jnp.where(platform_positions_y >= 172, 0, 1) # bottom platform is at 172
-
-    player_over_platform = player_bottom_y >= platform_positions_y
-    prev_player_over_platform = prev_player_bottom_y >= platform_positions_y
+    player_over_platform = player_bottom_y <= platform_positions_y
+    # jax.debug.print("over_platform: {}", player_over_platform) 
+    prev_player_over_platform = prev_player_bottom_y <= platform_positions_y
     reached_platforms = jnp.sum(jnp.logical_and(
         player_over_platform,
         filter_first,
@@ -369,18 +370,23 @@ def reached_platform_level(state: KangarooState, prev_state: KangarooState) -> j
 
     # new reached
     new_reached = jnp.where(reached_platforms > prev_reached_platforms, 1, 0)
-    return new_reached.astype(jnp.float32)
+    filter_crashed = jnp.logical_or(
+        state.player.is_crashing,
+        prev_state.player.is_crashing,
+    )
+    return jnp.where(filter_crashed, 0, new_reached).astype(jnp.float32) 
 
-def enemies_killed(state: KangarooState, prev_state: KangarooState) -> jnp.ndarray:
+def enemies_killed(prev_state: KangarooState, state: KangarooState) -> jnp.ndarray:
     # return +1 for each enemy killed (one fewer monkeys)
-    monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) < jnp.count_nonzero(prev_state.level.monkey_states, axis=-1), 1, 0)
+    monkey_reward = jnp.where(jnp.count_nonzero(state.level.monkey_states, axis=-1) == jnp.count_nonzero(prev_state.level.monkey_states, axis=-1)-1, 1, 0)
+    # filter out player deaths
     filter_crashed = jnp.logical_or(
         state.player.is_crashing,
         prev_state.player.is_crashing,
     )
     return jnp.where(filter_crashed, 0, monkey_reward).astype(jnp.float32) 
 
-def fruits_collected(state: KangarooState, prev_state: KangarooState) -> jnp.ndarray:
+def fruits_collected(prev_state: KangarooState, state: KangarooState) -> jnp.ndarray:
     # return +1 for each fruit collected
     prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
     new_active = jnp.sum(state.level.fruit_actives, axis=-1)
@@ -390,3 +396,48 @@ def fruits_collected(state: KangarooState, prev_state: KangarooState) -> jnp.nda
     )
     fruit_collected = jnp.where(new_active < prev_active, 1, 0)
     return jnp.where(filter_crashed, 0, fruit_collected).astype(jnp.float32)
+
+
+
+# GPT generated ones (adapted to our env)
+
+def obstacle_avoidance_reward(prev_state: KangarooState, state: KangarooState) -> jnp.ndarray:
+    # reward for avoiding obstacles
+    new_crash = jnp.logical_and(
+        state.player.is_crashing,
+        jnp.logical_not(prev_state.player.is_crashing),
+    )
+    return jnp.where(new_crash, -1, 0).astype(jnp.float32)
+
+def vertical_navigation_reward(prev_state: KangarooState, state: KangarooState) -> jnp.ndarray:
+    # reward for vertical navigation (going up)
+    reward = -(state.player.y - prev_state.player.y)
+    # if player is below 160, return -0.1
+    reward = jax.lax.cond(
+        state.player.y > 160,
+        lambda: -0.1,
+        lambda: reward.astype(jnp.float32),  # if player is below 160, return -0.1
+    )
+    return reward.astype(jnp.float32)
+
+def fruit_collection_reward(prev_state: KangarooState, state: KangarooState) -> jnp.ndarray:
+    # reward for collecting fruits
+    prev_active = jnp.sum(prev_state.level.fruit_actives, axis=-1)
+    new_active = jnp.sum(state.level.fruit_actives, axis=-1)
+    fruit_collected = jnp.where(new_active < prev_active, 1, 0)
+
+    # reward for ringing bell
+    bell_rang_cond = jnp.logical_and(prev_state.level.bell_timer == 0, state.level.bell_timer > 0)
+    bell_reward = jnp.where(bell_rang_cond, 1, 0)
+    fruit_collected += bell_reward
+    # if player is crashing, return 0
+    filter_crashed = jnp.logical_or(
+        state.player.is_crashing,
+        prev_state.player.is_crashing,
+    )
+    return jnp.where(filter_crashed, 0, fruit_collected).astype(jnp.float32)
+
+def goal_reaching_reward(prev_state: KangarooState, state: KangarooState) -> jnp.ndarray:
+    # reward for reaching the goal
+    goal_reached_cond = jnp.logical_and(state.player.x == state.level.child_position[0], state.player.y == state.level.child_position[1])
+    return jnp.where(goal_reached_cond, 1, 0).astype(jnp.float32)

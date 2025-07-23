@@ -141,11 +141,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestStat
 # @jax.jit
 def divers_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     state = env_state
-    #TODO: is there a better way to unpack?
-    if isinstance(state, MultiRewardLogState):
-        state = state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(state)
 
     # fight  (if enemy is close)
     danger_dist_sq = 40 ** 2
@@ -288,16 +284,31 @@ def total_shot(prev_state: SeaquestState, state: SeaquestState):
     return reward
 
 @jax.jit
-def total_surface_without_dying(prev_state: SeaquestState, state: SeaquestState):
-    # return 1 if player reaches surface and doesn't die (at least one diver)
-    at_surface = lambda s: s.player_y == 46
+def total_surface_without_dying(prev_state, state):
+    # return 1 if player reaches surface and doesn't die (at least one diver, no collision, no oxygen_empty)
+    at_surface = lambda s: s.player_y <= 47
+    close_to_surface = lambda s: s.player_y <= 50
     newly_surfaced = jnp.logical_and(
         at_surface(state),
-        jnp.logical_not(at_surface(prev_state))
+        jnp.logical_and(
+            jnp.logical_not(at_surface(prev_state)),
+            close_to_surface(prev_state)
+        )
     )
-    has_diver = lambda s: s.divers_collected > 0 
+    has_diver = lambda s: s.divers_collected > 0
+    oxygen_empty = lambda s: s.oxygen == 0
+    surface_cond = jnp.logical_and(
+        newly_surfaced,
+        jnp.logical_and(
+            jnp.logical_not(oxygen_empty(state)), 
+            jnp.logical_not(oxygen_empty(prev_state))
+        )
+    )
     reward = jnp.where(
-        jnp.logical_and(newly_surfaced, has_diver(prev_state)),
+        jnp.logical_and(
+            surface_cond,
+            has_diver(state)
+        ),
         1.0,
         0.0
     )

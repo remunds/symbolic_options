@@ -95,7 +95,8 @@ def make_train(config):
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=True, episodic_life=True)
+                # env = AtariWrapper(env, sticky_actions=True, episodic_life=True)
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             else:
                 env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             env = ObjectCentricWrapper(env)
@@ -470,7 +471,7 @@ if __name__ == "__main__":
         "NUM_ENVS": 128,
         "NUM_STEPS": 128,
         "TOTAL_TIMESTEPS": 5e7,
-        "UPDATE_EPOCHS": 4,
+        "UPDATE_EPOCHS": 2,
         "NUM_MINIBATCHES": 4,
         "GAMMA": 0.99,
         "GAE_LAMBDA": 0.95,

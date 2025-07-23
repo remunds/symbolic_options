@@ -151,12 +151,14 @@ def outer_make_train(config):
         test_env_modif = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected
+        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected 
+        from symbolic_options.reward_functions.kangaroo import obstacle_avoidance_reward, vertical_navigation_reward, fruit_collection_reward
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
 
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward, reached_platform_level, enemies_killed, fruits_collected] 
+        # reward_funcs = [vertical_navigation_reward, obstacle_avoidance_reward, fruit_collection_reward, reached_platform_level, enemies_killed, fruits_collected]
         if config.get("NO_REWARDS", False):
             reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
 
@@ -375,7 +377,7 @@ def single_run(config):#
 
 def tune(default_config):
     """Hyperparameter sweep with wandb."""
-
+    print("Running hyperparameter tuning with wandb...")
     default_config = {**default_config, **default_config["alg"]}
     print(default_config)
     alg_name = default_config.get("ALG_NAME", "pqn")
@@ -389,23 +391,32 @@ def tune(default_config):
             config[k] = v
 
         print("running experiment with params:", config)
-
         rng = jax.random.PRNGKey(config["SEED"])
         rngs = jax.random.split(rng, config["NUM_SEEDS"])
+        params, batch_stats = load_network_params(config)
         train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
-        outs = jax.block_until_ready(train_vjit(rngs))
+        outs = jax.block_until_ready(train_vjit(rngs, params, batch_stats))
+
 
     sweep_config = {
         "name": f"{alg_name}_{env_name}",
         "method": "bayes",
         "metric": {
-            "name": "test_returned_episode_returns",
+            "name": "test/returned_episode_env_returns",
             "goal": "maximize",
         },
         "parameters": {
             "LR": {
                 "min": 0.00001,
                 "max": 0.001,
+            },
+            "EPS_FINISH": {
+                "min": 0.001,
+                "max": 0.1,
+            },
+            "EPS_DECAY": {
+                "min": 0.1,
+                "max": 0.7,
             },
         },
     }
@@ -414,7 +425,7 @@ def tune(default_config):
     sweep_id = wandb.sweep(
         sweep_config, entity=default_config["ENTITY"], project=default_config["PROJECT"]
     )
-    wandb.agent(sweep_id, wrapped_make_train, count=1000)
+    wandb.agent(sweep_id, wrapped_make_train, count=100)
 
 
 @hydra.main(version_base=None, config_path="./src/symbolic_options/config", config_name="config")
