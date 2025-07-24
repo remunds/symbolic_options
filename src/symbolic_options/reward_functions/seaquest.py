@@ -25,9 +25,12 @@ def env_reward(prev_state: SeaquestState, state: SeaquestState):
 
 @jax.jit
 def collect_divers_reward(prev_state: SeaquestState, state: SeaquestState):
-    reward = jnp.where(state.divers_collected > prev_state.divers_collected, 1, 0)
+    # reward = jnp.where(state.divers_collected > prev_state.divers_collected, 1, 0)
+    # TODO: test if this is better (higher reward for collecting more)
+    reward = jnp.where(state.divers_collected > prev_state.divers_collected, state.divers_collected, 0)
     # dying punishment
-    reward = jnp.where(state.lives < prev_state.lives, -1, reward)
+    # TODO: Test if required
+    # reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
 
 @jax.jit
@@ -183,10 +186,7 @@ def divers_default_policy(network, meta_train_state, last_obs, env_state: Seaque
 # @jax.jit
 def shoot_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     state = env_state
-    if isinstance(state, MultiRewardLogState):
-        state = state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(state)
 
     # rescue (always if divers are present)
     divers_active = state.diver_positions[..., 2] != 0 # (128, 4)
@@ -221,6 +221,7 @@ def shoot_default_policy(network, meta_train_state, last_obs, env_state: Seaques
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
    # choose either divser_default or enemy_default
    return divers_default_policy(network, meta_train_state, last_obs, env_state) 
+#    return shoot_default_policy(network, meta_train_state, last_obs, env_state)
 
 #TODO: for typing, we may want to define CustomTrainSeaquestState here (or somewhere common) and import
 # @jax.jit

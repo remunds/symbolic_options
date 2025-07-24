@@ -1,6 +1,6 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_comb_pre"
+ALG_NAME: "pqn_hier_comb_pre_diverchange"
 TOTAL_TIMESTEPS: 5e7 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
 TOTAL_TIMESTEPS_DECAY: 5e7 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #512 # parallel environments
@@ -15,7 +15,7 @@ EPS_DECAY: 0.1 # Best for Seaquest
 META_EPS_START: 1.0 # this will be the value until training is started
 META_EPS_FINISH: 0.1
 META_EPS_DECAY: 0.3 # ratio of total updates
-NUM_EPOCHS: 5
+NUM_EPOCHS: 3
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 NORM_INPUT: False 
@@ -43,7 +43,7 @@ PRETRAIN_LEN: 7000 #100000 #25000 # length of pretraining (128 envs)
 # load and freeze params
 LOAD_PARAMS: True
 LOAD_PATH: models
-FREEZE_AGENTS: True
+FREEZE_AGENTS: False
 
 # env specific
 ENV_NAME: "Seaquest"

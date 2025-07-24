@@ -1,6 +1,6 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_llm"
+ALG_NAME: "pqn_hier_llm_diverchange"
 TOTAL_TIMESTEPS: 5e7 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
 TOTAL_TIMESTEPS_DECAY: 5e7 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #512 # parallel environments
@@ -19,7 +19,7 @@ NUM_EPOCHS: 5
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 NORM_INPUT: False 
-LR: 1.0e-4
+LR: 2.5e-4
 MAX_GRAD_NORM: 10
 # MAX_GRAD_NORM: 0.5 
 LR_LINEAR_DECAY: False #True
@@ -34,7 +34,7 @@ HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
 NUM_AGENTS: 3 #Required, if additional rewards are tested
 META_POLICY: "llm" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
-META_GREEDY: True # True: take greedy option, else sample from q-dist
+META_GREEDY: False # True: take greedy option, else sample from q-dist
 META_SHAPED_REWARD: False # Currently broken 
 LLM_PRETRAIN: False #pretrain options with llm meta policy
 RANDOM_PRETRAIN: False #pretrian options with random meta policy
@@ -51,4 +51,4 @@ TEST_NUM_ENVS: 1024 #512
 TEST_NUM_STEPS: 10000
 TEST_MODIFS: False # whether to use modifications on test-env (no-enemies)
 EPS_TEST: 0.0 # 0 for greedy policy
-RECORD_VIDEO: False # in terms of total updates
+RECORD_VIDEO: True # in terms of total updates
