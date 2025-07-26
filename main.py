@@ -76,14 +76,14 @@ def outer_make_train(config):
             return env
         env = create_env(True, False, False)
         test_env = create_env(False, False, False)
-        test_env_modif = create_env(False, False, True) # evaluate on mod
+        test_env_modif = create_env(False, False, False) # evaluate on mod
         renderer = BreakoutRenderer()
 
     elif config.get("ENV_NAME", None) == "Freeway":
         from jaxatari.games.jax_freeway import JaxFreeway, FreewayRenderer
         from jaxatari.wrappers import MultiRewardLogWrapper
         from symbolic_options.reward_functions.freeway import avoid_crash, go_forward, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
-        from jaxatari.games.mods.freeway_mods import SpeedMode, StopAllCars, AlwaysStopAllCars, StopAndGo
+        from jaxatari.games.mods.freeway_mods import SpeedMode, StopAllCars, AlwaysStopAllCars
 
         reward_funcs = [avoid_crash, go_forward]
         if config.get("NO_REWARDS", False):
@@ -96,8 +96,8 @@ def outer_make_train(config):
             if stop_all_cars:
                 env = AlwaysStopAllCars(env)
             if stop_random_cars:
-                # env = StopAllCars(env)
-                env = StopAndGo(env)
+                env = StopAllCars(env)
+                # env = StopAndGo(env)
             if speed_mode:
                 env = SpeedMode(env)
             if train:

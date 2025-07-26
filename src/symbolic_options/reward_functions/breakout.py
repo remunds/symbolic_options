@@ -71,8 +71,8 @@ def defensive_positioning(prev: BreakoutState, curr: BreakoutState) -> float:
     """
     player_width = jnp.where(
         curr.small_paddle,
-        BreakoutConstants.PLAYER_SIZE_SMALL[0],
-        BreakoutConstants.PLAYER_SIZE[0]
+        BreakoutConstants().PLAYER_SIZE_SMALL[0],
+        BreakoutConstants().PLAYER_SIZE[0]
     )
     screen_center_x = 80+8 #middle = WINDOW_WIDTH // 2 + WALL_WIDTH
     # distance to mid
@@ -90,14 +90,14 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
     state = unpack(env_state)
     player_width = jnp.where(
         state.small_paddle,
-        BreakoutConstants.PLAYER_SIZE_SMALL[0],
-        BreakoutConstants.PLAYER_SIZE[0]
+        BreakoutConstants().PLAYER_SIZE_SMALL[0],
+        BreakoutConstants().PLAYER_SIZE[0]
     )
 
     # ball is approaching, if ball_vel_y is positive and passed the middle of the screen
     ball_approaching = jnp.logical_and(state.ball_vel_y > 0, state.ball_y > 122) 
 
-    close_to_paddle = abs(state.ball_y - BreakoutConstants.PLAYER_START_Y) < 2*player_width
+    close_to_paddle = abs(state.ball_y - BreakoutConstants().PLAYER_START_Y) < 2*player_width
 
     # if ball is approaching (after mid) -> track ball
     # if close to paddle -> return ball
@@ -109,7 +109,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
         jnp.where(close_to_paddle, 1, 2)  # ReturnBall or RecoverToCenter
     )
     qvals = jax.nn.one_hot(qvals, 3)  # Assuming 3 skills: TrackBall, InterceptBall, RecoverToCenter
-    return qvals 
+    return qvals.astype(jnp.float32)  # Ensure the output is float32 for consistency
 
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     # default to tracking (always active) 
@@ -117,12 +117,12 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     state = unpack(env_state)
     player_width = jnp.where(
         state.small_paddle,
-        BreakoutConstants.PLAYER_SIZE_SMALL[0],
-        BreakoutConstants.PLAYER_SIZE[0]
+        BreakoutConstants().PLAYER_SIZE_SMALL[0],
+        BreakoutConstants().PLAYER_SIZE[0]
     )
     # ball is approaching, if ball_vel_y is positive and passed the middle of the screen
     ball_approaching = jnp.logical_and(state.ball_vel_y > 0, state.ball_y > 122)
-    close_to_paddle = abs(state.ball_y - BreakoutConstants.PLAYER_START_Y) < 2*player_width
+    close_to_paddle = abs(state.ball_y - BreakoutConstants().PLAYER_START_Y) < 2*player_width
     # if ball is approaching (after mid) -> track ball
     # if close to paddle -> return ball
     # else (ball not approaching) -> recover to center
@@ -135,7 +135,7 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
         jnp.logical_or(returnball_qvals, recover_qvals),
         track_qvals
     )
-    return q_vals
+    return q_vals.astype(jnp.float32)  # Avoid crash or go forward, both can be active at once
 
 
 def learned_meta_policy(network, meta_train_state, last_obs, env_state):
@@ -147,7 +147,7 @@ def learned_meta_policy(network, meta_train_state, last_obs, env_state):
         last_obs,
         train=False,
     )
-    return q_vals
+    return q_vals.astype(jnp.float32)  # Ensure the output is float32 for consistency
 
 def combined_meta_policy(network, meta_train_state, last_obs, env_state):
     # combine learned and conditional meta policy

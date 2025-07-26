@@ -110,7 +110,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
     )
 
     qvals = jax.nn.one_hot(qvals, 2) 
-    return qvals 
+    return qvals.astype(jnp.float32)  # Avoid crash or go forward 
 
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     # default to going_forward (always active) 
@@ -133,7 +133,7 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
         qvals_avoid_crash, 
         qvals_go_forward
     )
-    return q_vals
+    return q_vals.astype(jnp.float32)  # Avoid crash or go forward, both can be active at once
 
 
 def learned_meta_policy(network, meta_train_state, last_obs, env_state):
@@ -145,7 +145,7 @@ def learned_meta_policy(network, meta_train_state, last_obs, env_state):
         last_obs,
         train=False,
     )
-    return q_vals
+    return q_vals.astype(jnp.float32)  # Ensure the output is float32 for consistency
 
 def combined_meta_policy(network, meta_train_state, last_obs, env_state):
     # combine learned and conditional meta policy
