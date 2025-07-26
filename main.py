@@ -43,12 +43,9 @@ def outer_make_train(config):
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
-        env = create_env(True, True, False) # train on weaker (randomized) enemy
-        test_env = create_env(False, True, False) # randomized enemy
-        test_env_modif = create_env(False, False, False) # evaluate on stronger (default) enemy 
-        # env = create_env(True, False, False)
-        # test_env = create_env(False, False, False) 
-        # test_env_modif = create_env(False, True, False) # evaluate on randomized
+        env = create_env(True, False, False) 
+        test_env = create_env(False, False, False) 
+        test_env_modif = create_env(False, False, True) # evaluate on lazy enemy 
         renderer = PongRenderer()
 
     elif config.get("ENV_NAME", None) == "Breakout":
@@ -113,7 +110,7 @@ def outer_make_train(config):
             return env
         env = create_env(True, False, False, False) # train on default
         test_env = create_env(False, False, False, False) # evaluate on default
-        test_env_modif = create_env(False, True, False, False) # evaluate on mod
+        test_env_modif = create_env(False, False, True, False) # evaluate on mod
         renderer = FreewayRenderer()
 
     elif config.get("ENV_NAME", None) == "Seaquest":
@@ -152,9 +149,9 @@ def outer_make_train(config):
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected 
-        from symbolic_options.reward_functions.kangaroo import obstacle_avoidance_reward, vertical_navigation_reward, fruit_collection_reward
+        # from symbolic_options.reward_functions.kangaroo import obstacle_avoidance_reward, vertical_navigation_reward, fruit_collection_reward
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from jaxatari.wrappers import MultiRewardLogWrapper
+        from jaxatari.wrappers import MultiRewardLogWrapper#, MultiRewardWrapper
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
 
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward, reached_platform_level, enemies_killed, fruits_collected] 
@@ -178,7 +175,6 @@ def outer_make_train(config):
             return env
         env = create_env(True, False)
         test_env = create_env(False, False)
-        # if config.get("TEST_MODIFS", False):
         test_env_modif = create_env(False, True)
         renderer = KangarooRenderer()
     # only quick PQN test:

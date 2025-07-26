@@ -29,6 +29,7 @@ STICKY_ACTIONS: False
 EPISODIC_LIFE: False
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
+NUM_AGENTS: 3
 META_POLICY: "combined" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_GREEDY: False # True: take greedy option, else sample from q-dist

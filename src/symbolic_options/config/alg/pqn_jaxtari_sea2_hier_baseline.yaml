@@ -1,6 +1,6 @@
 # this is adapted from Atari configuration 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_hier_baseline_llm"
+ALG_NAME: "pqn_hier_baseline"
 TOTAL_TIMESTEPS: 5e7 # 1e8 == 100M, but times 4 (frame-skipping) -> pqn paper: enough to outperform Rainbow
 TOTAL_TIMESTEPS_DECAY: 5e7 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
 NUM_ENVS: 1024 #512 # parallel environments
@@ -29,11 +29,13 @@ HIDDEN_SIZE: 64
 NUM_LAYERS: 3
 STICKY_ACTIONS: False
 EPISODIC_LIFE: False
+
 # IMPORTANT LINE:
 NO_REWARDS: True #Only use env-reward for all options
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
-META_POLICY: "llm" # llm, learned, conditional, combined
+NUM_AGENTS: 3
+META_POLICY: "learned" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_GREEDY: False # True: take greedy option, else sample from q-dist
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)

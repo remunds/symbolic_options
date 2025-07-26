@@ -53,8 +53,8 @@ def upward_reward(prev_state: SeaquestState, state: SeaquestState):
 def shaped_reward(prev_state: SeaquestState, state: SeaquestState):
     # combine all rewards (+surface with 6 divers reward)
     #TODO: this is a try of balancing the rewards (make collecting divers more valuable than fighting enemies, and encouraging moving up)
-    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state) + upward_reward(prev_state, state)
-    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 1000, reward)
+    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state)# + upward_reward(prev_state, state)
+    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 100, reward)
     return reward
 
 # @jax.jit

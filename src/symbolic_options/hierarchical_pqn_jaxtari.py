@@ -204,8 +204,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         num_agents = config.get("NUM_AGENTS", len(env.reward_funcs))
         if num_agents == 0:
             num_agents = 1
-        if config.get("META_SHAPED_REWARD", False):
-            num_agents -= 1 # remove one if shaped reward is given
+        # if config.get("META_SHAPED_REWARD", False):
+        #     num_agents -= 1 # remove one if shaped reward is given
 
         # create multiple agents
         # networks.append(meta_network)
@@ -529,7 +529,11 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             
             meta_policy_string = config.get("META_POLICY", "llm")
             if meta_policy_string == "learned" or meta_policy_string == "combined":
-                meta_reward_idx = -1 
+
+                meta_reward_idx = -1
+                if config.get("SHAPED_REWARD", False):
+                    meta_reward_idx = -2  # if shaped reward is used, the last idx is the env reward, the second last is the shaped reward
+                #TODO: shaped reward stuff
                 # NOTE: currently, this is always the last -> env_reward
                 # could previously also be shaped, but not anymore due to external rewards for evaluation
                 if not (config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False)):

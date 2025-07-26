@@ -485,7 +485,7 @@ if __name__ == "__main__":
         "ENTITY": "",
         "PROJECT": "",
         "ALG_NAME": "PPO",
-        "ENV_NAME": "Seaquest",
+        "ENV_NAME": "Kangaroo",
         "NAME_INITIALS": "RE",
         "TEST_INTERVAL": 10_000,
         "TEST_NUM_ENVS": 128,
