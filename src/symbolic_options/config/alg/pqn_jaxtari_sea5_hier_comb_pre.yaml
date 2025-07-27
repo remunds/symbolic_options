@@ -29,9 +29,9 @@ HIDDEN_SIZE: 64
 NUM_LAYERS: 3
 STICKY_ACTIONS: False
 EPISODIC_LIFE: False
-NUM_AGENTS: 3
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
+NUM_AGENTS: 3 #Required, if additional rewards are tested
 META_POLICY: "combined" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_GREEDY: False # True: take greedy option, else sample from q-dist

@@ -20,7 +20,7 @@ def env_reward(prev_state: KangarooState, state: KangarooState) -> float:
     prev_state = unpack(prev_state)
     state = unpack(state)
     # Compute the environment reward based on the previous and current state
-    return JaxKangaroo()._get_reward(prev_state, state)
+    return JaxKangaroo()._get_env_reward(prev_state, state)
 # @jax.jit
 # def navigate_reward(prev_state: KangarooState, state: KangarooState):
 #     # navigate to and up ladder

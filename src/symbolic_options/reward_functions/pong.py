@@ -169,6 +169,8 @@ def track_and_align(prev: PongState, curr: PongState) -> float:
     1 when distance significantly reduced, 0 when increased.
     """
     env_reward = JaxPong()._get_reward(prev, curr)
+    prev = unpack(prev)
+    curr = unpack(curr)
     # prev_dist = abs((prev.player_y+PLAYER_H/2) - prev.ball_y)
     # curr_dist = abs((curr.player_y+PLAYER_H/2) - curr.ball_y)
     # reward = jnp.where(
@@ -189,6 +191,8 @@ def return_shot(prev: PongState, curr: PongState) -> float:
     """
     Binary reward ∈ {0, 1} if paddle and ball align closely at contact range.
     """
+    prev = unpack(prev)
+    curr = unpack(curr)
     env_reward = JaxPong()._get_reward(prev, curr)
     x_close = abs(curr.ball_x - PLAYER_X) < 1.5 * PLAYER_W 
     y_align = abs(curr.ball_y - curr.player_y) < 0.5 * PLAYER_H
@@ -203,6 +207,8 @@ def defensive_positioning(prev: PongState, curr: PongState) -> float:
     Reward ∈ [0, 1] based on movement toward screen vertical center.
     1 for maximal improvement, 0 if worsened.
     """
+    prev = unpack(prev)
+    curr = unpack(curr)
     screen_center_y = SCREEN_CENTER_Y 
     env_reward = JaxPong()._get_reward(prev, curr)
     # distance to mid
@@ -248,6 +254,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state):
 
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     # default to tracking (always active) 
+    env_state = unpack(env_state)
     ball_approaching = env_state.ball_x > SCREEN_CENTER_X
     close_to_paddle = abs(env_state.ball_x - PLAYER_X) < 10
     y_misaligned = abs(env_state.ball_y - env_state.player_y) > 0.5 * PLAYER_H

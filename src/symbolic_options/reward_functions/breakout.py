@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import lax
 import jax
 from enum import IntEnum
-from jaxatari.games.jax_breakout import BreakoutState, JaxBreakout, BreakoutConstants #PLAYER_SIZE, PLAYER_SIZE_SMALL, PLAYER_START_X, PLAYER_START_Y
+from jaxatari.games.jax_breakout import BreakoutState, BreakoutConstants #PLAYER_SIZE, PLAYER_SIZE_SMALL, PLAYER_START_X, PLAYER_START_Y
 
 def unpack(state):
     while not isinstance(state, BreakoutState):
@@ -21,7 +21,7 @@ def env_reward(prev_state: BreakoutState, state: BreakoutState) -> float:
     prev_state = unpack(prev_state)
     state = unpack(state)
     # Compute the environment reward based on the previous and current state
-    return JaxBreakout()._get_reward(prev_state, state)
+    return state.score - prev_state.score
 
 def track_and_align(prev: BreakoutState, curr: BreakoutState) -> float:
     """

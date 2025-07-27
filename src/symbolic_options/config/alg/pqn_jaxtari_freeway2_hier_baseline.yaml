@@ -34,7 +34,7 @@ EPISODIC_LIFE: True
 NO_REWARDS: True #Only use env-reward for all options
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
-NUM_AGENTS: 3
+NUM_AGENTS: 2
 META_POLICY: "learned" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_GREEDY: False # True: take greedy option, else sample from q-dist

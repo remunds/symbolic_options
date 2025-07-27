@@ -40,7 +40,7 @@ RANDOM_PRETRAIN: False #pretrian options with random meta policy
 PRETRAIN_LEN: 3700 #100000 #25000 # length of pretraining (128 envs)
 
 # env specific
-ENV_NAME: "Seaquest"
+ENV_NAME: "Kangaroo"
 ENV_KWARGS: {}
 
 # evaluation
