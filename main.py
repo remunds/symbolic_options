@@ -124,7 +124,8 @@ def outer_make_train(config):
         # this makes sure that there is always a fallback if no rule evaluates to true
         reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
         if config.get("NO_REWARDS", False):
-            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+            # reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+            reward_funcs = [env_reward, env_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
@@ -157,7 +158,8 @@ def outer_make_train(config):
         reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward, reached_platform_level, enemies_killed, fruits_collected] 
         # reward_funcs = [vertical_navigation_reward, obstacle_avoidance_reward, fruit_collection_reward, reached_platform_level, enemies_killed, fruits_collected]
         if config.get("NO_REWARDS", False):
-            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+            # reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+            reward_funcs = [env_reward, env_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected] 
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)

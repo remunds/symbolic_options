@@ -333,7 +333,7 @@ def make_train(config):
                 )
                 runner_state = (env_state, obs, rng)
                 env_state_vid = jax.tree.map(lambda x: x[0], env_state)
-                info.pop("all_rewards", None)  # Remove all_rewards from info
+                info.pop("all_rewards")  # Remove all_rewards from info
                 return runner_state, (info, env_state_vid, done[0]) 
 
             rng, _rng = jax.random.split(rng)
@@ -341,17 +341,17 @@ def make_train(config):
             runner_state, output = jax.lax.scan(
                 _test_step, runner_state, None, config["TEST_NUM_STEPS"]
             )
-            metrics, states, dones = output
+            infos, states, dones = output
 
-            # Aggregate metrics
-            test_metrics = {}
-            pre_str = "modif/" if modif else "test/"
-            for k, v in metrics.items():
-                if isinstance(v, dict):
-                    for sub_k, sub_v in v.items():
-                        test_metrics[f"{pre_str}{k}_{sub_k}"] = sub_v.mean()
-                else:
-                    test_metrics[f"{pre_str}{k}"] = v.mean()
+            # Aggregate metrics (if done)
+            # test_metrics = {}
+            # pre_str = "test_modif/" if modif else "test/"
+            # for k, v in metrics.items():
+            #     if isinstance(v, dict):
+            #         for sub_k, sub_v in v.items():
+            #             test_metrics[f"{pre_str}/{k}_{sub_k}"] = sub_v.mean()
+            #     else:
+            #         test_metrics[f"{pre_str}/{k}"] = v.mean()
 
             # Record video
             if config["RECORD_VIDEO"]:
@@ -362,7 +362,20 @@ def make_train(config):
                     operand=None,
                 )
 
-            return test_metrics
+            # return mean of done infos
+            done_infos = jax.tree.map(
+                lambda x: jnp.nanmean(
+                    jnp.where(
+                        infos["returned_episode"],
+                        x,
+                        jnp.nan,
+                    )
+                ),
+                infos,
+            )
+            return done_infos
+
+            # return test_metrics
 
         # TRAIN LOOP
         def _update_step(runner_state, unused):
@@ -380,19 +393,21 @@ def make_train(config):
                 rng, _rng = jax.random.split(rng)
                 obsv, env_state, reward, done, info = vmap_step(env_state, action)
                 # info["all_rewards"] = jnp.squeeze(info["all_rewards"])
-                info.pop("all_rewards", None)  # Remove all_rewards from info
+                info.pop("all_rewards")  # Remove all_rewards from info
                 transition = Transition(
                     done, action, value, reward, log_prob, last_obs, info
                 )
                 runner_state = (train_state, env_state, obsv, rng)
                 return runner_state, transition
 
+            train_state, env_state, last_obs, test_metrics, modif_metrics, rng = runner_state
+            env_runner = (train_state, env_state, last_obs, rng)
             runner_state, traj_batch = jax.lax.scan(
-                _env_step, runner_state, None, config["NUM_STEPS"]
+                _env_step, env_runner, None, config["NUM_STEPS"]
             )
+            train_state, env_state, last_obs, rng = runner_state
 
             # CALCULATE ADVANTAGE
-            train_state, env_state, last_obs, rng = runner_state
             _, last_val = network.apply(train_state.params, last_obs)
 
             def _calculate_gae(traj_batch, last_val):
@@ -524,20 +539,25 @@ def make_train(config):
             test_metrics = jax.lax.cond(
                 train_state.timesteps % config["TEST_INTERVAL"] == 0,
                 lambda ts, r: get_test_metrics(ts, False, r),
-                lambda ts, r: {k: jnp.array(jnp.nan) for k in [f"test/{mk}" for mk in infos.keys()]}, # Dummy zeros
+                # lambda ts, r: {k: jnp.array(jnp.nan) for k in [f"test/{mk}" for mk in infos.keys()]}, # Dummy zeros
+                lambda ts, r: test_metrics,
                 train_state,
                 _rng
             )
-            metrics.update(test_metrics)
+            # metrics.update(test_metrics)
+            metrics.update({f"test/{k}": v for k, v in test_metrics.items()})
 
             modif_metrics = jax.lax.cond(
                 train_state.timesteps % config["TEST_INTERVAL"] == 0,
                 lambda ts, r: get_test_metrics(ts, True, r),
-                lambda ts, r: {k: jnp.array(jnp.nan) for k in [f"modif/{mk}" for mk in infos.keys()]}, # Dummy zeros
+                # lambda ts, r: {k: jnp.array(jnp.nan) for k in [f"modif/{mk}" for mk in infos.keys()]}, # Dummy zeros
+                lambda ts, r: modif_metrics,
                 train_state,
                 _rng
             )
-            metrics.update(modif_metrics)
+
+            # metrics.update(modif_metrics)
+            metrics.update({f"test_modif/{k}": v for k, v in modif_metrics.items()})
 
             if config["WANDB_MODE"] != "disabled":
                 def callback(metrics, original_rng):
@@ -553,11 +573,13 @@ def make_train(config):
 
             jax.debug.callback(rtpt_callback)
             
-            runner_state = (train_state, env_state, last_obs, rng)
+            runner_state = (train_state, env_state, last_obs, test_metrics, modif_metrics, rng)
             return runner_state, metrics
 
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_state, env_state, obsv, _rng)
+        test_metrics = get_test_metrics(train_state, False, _rng) 
+        modif_metrics = get_test_metrics(train_state, True, _rng)
+        runner_state = (train_state, env_state, obsv, test_metrics, modif_metrics, _rng)
         runner_state, metric = jax.lax.scan(
             _update_step, runner_state, None, config["NUM_UPDATES"]
         )
