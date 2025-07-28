@@ -279,6 +279,7 @@ def make_train(config):
         return config["LR"] * frac
 
     def train(rng):
+        original_rng = rng[0]
         # INIT NETWORK
         network = ActorCritic(
             env.action_space().n, activation=config["ACTIVATION"]
@@ -539,9 +540,16 @@ def make_train(config):
             metrics.update(modif_metrics)
 
             if config["WANDB_MODE"] != "disabled":
-                def callback(metrics):
+                def callback(metrics, original_rng):
+                    if config.get("WANDB_LOG_ALL_SEEDS", False):
+                        metrics.update(
+                            {
+                                f"rng{int(original_rng)}/{k}": v
+                                for k, v in metrics.items()
+                            }
+                        )
                     wandb.log(metrics, step=metrics["update_steps"])
-                jax.debug.callback(callback, metrics)
+                jax.debug.callback(callback, metrics, original_rng)
 
             jax.debug.callback(rtpt_callback)
             
@@ -606,13 +614,14 @@ def main(config):
         config=config,
         mode=config["WANDB_MODE"],
     )
-    rng = jax.random.PRNGKey(0)
+    rng = jax.random.PRNGKey(config["SEED"])
+    rngs = jax.random.split(rng, config["NUM_SEEDS"]) 
     print("Compiling...")
     start = time.time()
-    train_jit = jax.jit(make_train(config))
-    train_jit.lower(rng).compile()
+    train_jit = jax.jit(jax.vmap(make_train(config)))
+    train_jit.lower(rngs).compile()
     print(f"Compilation took {time.time()-start} seconds.")
-    out = train_jit(rng)
+    outs = jax.block_until_ready(train_jit(rngs))
     print(f"Training took {time.time()-start} seconds.") 
 
 

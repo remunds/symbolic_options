@@ -127,8 +127,11 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     # if close to paddle -> return ball
     # else (ball not approaching) -> recover to center
     returnball_qvals = jnp.where(close_to_paddle, 1.0, 0.0)  # ReturnBall
+    returnball_qvals = jax.nn.one_hot(returnball_qvals, 3)  # ReturnBall skill
     recover_qvals = jnp.where(~ball_approaching, 2.0, 0.0)  # RecoverToCenter
+    recover_qvals = jax.nn.one_hot(recover_qvals, 3)  # RecoverToCenter skill
     track_qvals = jnp.where(ball_approaching, 0.0, 0.0)  # TrackBall, always active
+    track_qvals = jax.nn.one_hot(track_qvals, 3)  # TrackBall skill
 
     # Combine the Q-values
     q_vals = jnp.logical_or(

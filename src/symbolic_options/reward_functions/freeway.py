@@ -117,15 +117,28 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state):
     # Same as llm_meta_policy, but allow multiple skills to be active at once 
     state = unpack(env_state)
 
-    car_close = jnp.abs(state.cars[:, 1] - state.chicken_y) < 2 * FreewayConstants().chicken_width
+    distance_y = jnp.abs(jnp.expand_dims(state.chicken_y, axis=1) - state.cars[..., 1])
+    cars_in_front = state.cars[..., 1] < (jnp.expand_dims(state.chicken_y, axis=1) + FreewayConstants().lane_spacing)
+    cars_in_close_front = jnp.logical_and(cars_in_front, distance_y < FreewayConstants().lane_spacing * 2)
+    distance_x = jnp.abs(FreewayConstants().chicken_x - state.cars[..., 0])
+    total_distance = jnp.sqrt(distance_x**2 + distance_y**2)
+    x_distance_filtered = jnp.where(
+        cars_in_close_front,
+        distance_x,
+        jnp.inf  # set to inf if car is not in close front
+    )
+    min_x_distance = jnp.min(x_distance_filtered, axis=-1)  # over all cars
+
+    # car_close = min_x_distance < FreewayConstants().chicken_width * 4
+    car_close = (total_distance < FreewayConstants().chicken_width * 3).any(axis=-1)  # check if any car is close in any lane
 
     qvals_avoid_crash = jnp.where(
         car_close,
         0,
         1
     )
-    qvals_avoid_crash = jax.nn.one_hot(qvals_avoid_crash, 2)  # Avoid crash or not
     qvals_go_forward = jnp.ones_like(qvals_avoid_crash)  # always go forward
+    qvals_avoid_crash = jax.nn.one_hot(qvals_avoid_crash, 2)  # Avoid crash or not
     qvals_go_forward = jax.nn.one_hot(qvals_go_forward, 2)  # Go forward or not
 
     # Combine the Q-values
