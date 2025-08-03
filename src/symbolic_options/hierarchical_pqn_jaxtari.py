@@ -37,14 +37,10 @@ class QNetwork(nn.Module):
 
         for l in range(self.num_layers):
             x = nn.Dense(self.hidden_size)(x)
-            #TODO: If performance degrades then because this is now commented
-            # x = nn.Dense(self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
             x = normalize(x)
             x = nn.relu(x)
 
         x = nn.Dense(self.action_dim)(x)
-        #TODO: If performance degrades then because this is now commented
-        # x = nn.Dense(self.action_dim, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
 
         return x
 
@@ -88,35 +84,38 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
-
-    config["NUM_AGENTS"] = len(env.reward_funcs)
     config["OBS_SHAPE"] = env.observation_space().shape
     config["NUM_ACTIONS"] = env.action_space().n
 
     rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
     rtpt.start()
 
-
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    # vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    #     env.step#, in_axes=(0, 0, None)
+    # )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    vmap_step = lambda env_state, action: jax.vmap(
         env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    # test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    test_vmap_step = lambda env_state, action: jax.vmap(
         test_env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    # )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     modif_test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env_modif.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    modif_test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    # modif_test_vmap_step = lambda n_envs: lambda env_state, action: jax.vmap(
+    modif_test_vmap_step = lambda env_state, action: jax.vmap(
         test_env_modif.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):
@@ -198,29 +197,20 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             )
             return train_state
 
-        num_agents = config.get("NUM_AGENTS", 1)
-        if config.get("META_SHAPED_REWARD", False):
-            num_agents -= 1 # remove one if shaped reward is given
+        num_agents = config.get("NUM_AGENTS", len(env.reward_funcs))
+        if num_agents == 0:
+            num_agents = 1
 
         # create multiple agents
-        # networks.append(meta_network)
         rng_keys = jax.random.split(rng, num_agents)
-        # print("outer params0: ", params[0])
-        # train_state0 = create_agent(rng_keys[0], params[0], network, lr)
-        # print shape of each param
         train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, 0, None, None))(rng_keys, params, batch_stats, network, lr)
 
-        # meta_policy_string = config.get("META_POLICY", "llm")
-        # if meta_policy_string == "learned" or meta_policy_string == "combined":
         meta_network = QNetwork(
             action_dim=num_agents,
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
         meta_train_state = create_agent(rng, None, None, meta_network, lr_meta)
-        # else:
-        #     meta_network = None
-        #     meta_train_state = None
 
         # TRAINING LOOP
         def _update_step(runner_state, unused):
@@ -317,12 +307,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 )
 
                 # select the q_vals and action of the active agent
-                # q_vals = all_q_vals[active_agent, jnp.arange(config["NUM_ENVS"]), :]
                 new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])] # (128,)
 
-                new_obs, new_env_state, reward, new_done, info = vmap_step(
-                    config["NUM_ENVS"]
-                )(rng_s, env_state, new_action)
+                new_obs, new_env_state, reward, new_done, info = vmap_step(env_state, new_action)
 
                 rewards = info.pop("all_rewards") #(128,3)
                 # add reward to end -> (128,4)
@@ -335,16 +322,13 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     rewards=config.get("REW_SCALE", 1)*rewards,
                     done=new_done,
                     next_obs=new_obs,
-                    # q_val=q_vals,
                     q_val=all_q_vals,
-                    # meta_q_val=active_agent_q_vals
                     meta_q_val=combined_q
                 )
                 return (new_obs, new_env_state, rng), (transition, info)
 
             # step the env
             rng, _rng = jax.random.split(rng)
-            # prev_rewards = jnp.zeros((config["NUM_ENVS"], num_agents))
             (*expl_state, rng), (transitions, infos) = jax.lax.scan(
                 _step_env,
                 (*expl_state, _rng),
@@ -369,8 +353,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     transitions.next_obs[-1],
                     train=False,
                 )
-                #TODO: change back!
-                # last_q = jnp.max(last_q, axis=-1)
                 last_q = last_q[..., state_idx] # select the q_val of the active agent
 
                 def _get_target(lambda_returns_and_next_q, transition):
@@ -388,15 +370,12 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     next_q = jax.lax.cond(
                         state_idx == num_agents,
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
-                        #TODO: change back!
-                        # lambda _: jnp.max(transition.q_val, axis=-1),
                         lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
                         operand=None,
                     )
                     return (lambda_returns, next_q), lambda_returns
 
                 last_q = last_q * (1 - transitions.done[-1])
-                # lambda_returns = transitions.reward[-1] + config["GAMMA"] * last_q
                 lambda_returns = transitions.rewards[-1, :, state_idx] + config["GAMMA"] * last_q
                 _, targets = jax.lax.scan(
                     _get_target,
@@ -437,8 +416,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                                 ).squeeze(axis=-1),
                                 operand=None,
                             ) 
-                            # TODO: for meta, check if chosen_action_qvals and target are multiplied with the rule
-                            # chosen_action_qvals: qvals[active_agent], q_vals come from just the network(!)
                             loss = 0.5 * jnp.square(chosen_action_qvals - target).mean()
 
                             return loss, (updates, chosen_action_qvals)
@@ -523,10 +500,12 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             
             meta_policy_string = config.get("META_POLICY", "llm")
             if meta_policy_string == "learned" or meta_policy_string == "combined":
-                # meta_reward_idx = num_agents # num_agents reward is shaped or env reward
-                meta_reward_idx = num_agents # num_agents reward is shaped or env reward
-                # note that the reward_idx works, because we add the env_reward to the end of all_rewards
-                # so we either select the shaped reward or the env reward
+
+                meta_reward_idx = -1
+                if config.get("SHAPED_REWARD", False):
+                    meta_reward_idx = -2  # if shaped reward is used, the last idx is the env reward, the second last is the shaped reward
+                # NOTE: currently, this is always the last -> env_reward
+                # could previously also be shaped, but not anymore due to external rewards for evaluation
                 if not (config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False)):
                     metrics_meta, meta_train_state = _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
                     metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
@@ -689,13 +668,10 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 # new_obs, new_env_state, reward, done, info = test_vmap_step(
                 new_obs, new_env_state, reward, done, info = jax.lax.cond(
                     modif,
-                    lambda _: modif_test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
-                    lambda _: test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    lambda _: modif_test_vmap_step(env_state, action),
+                    lambda _: test_vmap_step(env_state, action),
                     operand=None
                 )
-                # new_obs, new_env_state, reward, done, info = step_fn(
-                #     config["TEST_NUM_ENVS"]
-                # )(_rng, env_state, action)
                 # only select the first value of all arrays of env_state for video generation
                 # (env==0)
                 env_state_vid = jax.tree.map(lambda x: x[0], new_env_state)
@@ -728,14 +704,12 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0])
 
             rng, _rng = jax.random.split(rng)
-            # init_obs, env_state = test_vmap_reset(config["TEST_NUM_ENVS"])(_rng)
             init_obs, env_state = jax.lax.cond(
                 modif,
                 lambda _: modif_test_vmap_reset(config["TEST_NUM_ENVS"])(_rng),
                 lambda _: test_vmap_reset(config["TEST_NUM_ENVS"])(_rng),
                 operand=None
             )
-            # init_obs, env_state = reset_fn(config["TEST_NUM_ENVS"])(_rng)
 
             init_rewards = jnp.zeros((config["TEST_NUM_ENVS"], num_agents))
             _, output = jax.lax.scan(

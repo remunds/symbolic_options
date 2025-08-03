@@ -182,6 +182,47 @@ class NoNecessitiesWrapper(GymnaxWrapper):
         
         return obs, new_state, reward, done, info
 
+@struct.dataclass
+class ExplorationState:
+    env_state: Any
+    exploration_map: chex.Array
+
+class ExplorationMapWrapper(GymnaxWrapper):
+    """Wrapper that tracks the exploration map of the environment."""
+    def __init__(self, env):
+        super().__init__(env)
+
+    @partial(jax.jit, static_argnums=(0, 2))
+    def reset(self, key: chex.PRNGKey, params=None):
+        obs, state = self._env.reset(key, params)
+        exp_state = ExplorationState(
+            env_state=state,
+            exploration_map=jnp.zeros_like(state.map)
+        )
+        return obs, exp_state
+
+    @partial(jax.jit, static_argnums=(0, 4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state,
+        action: Union[int, float],
+        params=None,
+    ):
+        # replace state's necessities with the initial values 
+        _, reset_state = self.reset(key, params)
+
+        obs, new_state, reward, done, info = self._env.step(
+            key, reset_state.env_state, action, params
+        )
+
+        exp_state = ExplorationState(
+            env_state=new_state,
+            exploration_map=state.exploration_map.at[new_state.player_position].set(1)
+        )
+        
+        return obs, exp_state, reward, done, info
+
 
 @struct.dataclass
 class LogEnvState:

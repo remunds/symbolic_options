@@ -19,7 +19,7 @@ NUM_EPOCHS: 5
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 NORM_INPUT: False 
-LR: 1.0e-4
+LR: 2.5e-4
 MAX_GRAD_NORM: 10
 # MAX_GRAD_NORM: 0.5 
 LR_LINEAR_DECAY: False #True
@@ -31,10 +31,11 @@ STICKY_ACTIONS: False
 EPISODIC_LIFE: False
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
+NUM_AGENTS: 3 #Required, if additional rewards are tested
 META_POLICY: "llm" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
-META_GREEDY: True # True: take greedy option, else sample from q-dist
-META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
+META_GREEDY: False # True: take greedy option, else sample from q-dist
+META_SHAPED_REWARD: False # Currently broken 
 LLM_PRETRAIN: False #pretrain options with llm meta policy
 RANDOM_PRETRAIN: False #pretrian options with random meta policy
 PRETRAIN_LEN: 3700 #100000 #25000 # length of pretraining (128 envs)

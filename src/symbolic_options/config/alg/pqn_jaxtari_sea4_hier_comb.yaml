@@ -12,9 +12,9 @@ EPS_START: 1.0
 # EPS_DECAY: 0.3 #Best for Kang
 EPS_FINISH: 0.001 #Best for seaquest
 EPS_DECAY: 0.1 # Best for Seaquest 
-META_EPS_START: 0.1 # this will be the value until training is started
-META_EPS_FINISH: 0.001
-META_EPS_DECAY: 0.1 # ratio of total updates
+META_EPS_START: 1.0 # this will be the value until training is started
+META_EPS_FINISH: 0.1
+META_EPS_DECAY: 0.3 # ratio of total updates
 NUM_EPOCHS: 5
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
@@ -31,6 +31,7 @@ STICKY_ACTIONS: False
 EPISODIC_LIFE: False
 
 HIERARCHICAL: True # if False: use PQN rather than hierarchical PQN
+NUM_AGENTS: 3 #Required, if additional rewards are tested
 META_POLICY: "combined" # llm, learned, conditional, combined
 # META_GREEDY: True # True: take greedy option, else sample from q-dist
 META_GREEDY: False # True: take greedy option, else sample from q-dist

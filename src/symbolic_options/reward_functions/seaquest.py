@@ -1,24 +1,31 @@
 import jax
 import jax.numpy as jnp
-from jaxatari.wrappers import MultiRewardLogEnvState, AtariState
-from jaxatari.games.jax_seaquest import SeaquestState
+from jaxatari.wrappers import AtariState, MultiRewardLogState
+from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestState
+def unpack(state):
+    while not isinstance(state, SeaquestState):
+        if hasattr(state, 'atari_state'):
+            state = state.atari_state
+        elif hasattr(state, 'env_state'):
+            state = state.env_state
+        else:
+            raise ValueError("State is not a SeaquestState or does not contain a SeaquestState.")
+    return state
 
 @jax.jit
-def idle_reward(prev_state: SeaquestState, state: SeaquestState):
-    # punish dying give 0.001 else
-    reward = jnp.where(state.lives < prev_state.lives, -1, 0.001)
+def env_reward(prev_state: SeaquestState, state: SeaquestState):
+    reward = JaxSeaquest()._get_env_reward(prev_state, state)
     return reward
 
 @jax.jit
 def collect_divers_reward(prev_state: SeaquestState, state: SeaquestState):
-    reward = jnp.where(state.divers_collected > prev_state.divers_collected, 1, 0)
-    # dying punishment
-    reward = jnp.where(state.lives < prev_state.lives, -1, reward)
+    # return +1 if new diver was collected
+    reward = jnp.where(state.divers_collected > prev_state.divers_collected, state.divers_collected, 0)
     return reward
 
 @jax.jit
 def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
-    # return 1 if an enemy was killed
+    # return +1 if an enemy was killed
     # (in this case if the score increased)
     # NOTE: could be adapted (may require adding enemy_kills to state)
     reward = jnp.where(state.score > prev_state.score, 1, 0)
@@ -26,19 +33,19 @@ def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
     reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
 
-
 @jax.jit
 def upward_reward(prev_state: SeaquestState, state: SeaquestState):
-    # return 1 if player is replenishing oxygen 
+    # return +0.1 if player is currently replenishing oxygen 
     reward = jnp.where(state.oxygen > prev_state.oxygen, 0.1, 0)
     return reward
 
 @jax.jit
 def shaped_reward(prev_state: SeaquestState, state: SeaquestState):
+    #NOTE: Not in use in final runs
     # combine all rewards (+surface with 6 divers reward)
     #TODO: this is a try of balancing the rewards (make collecting divers more valuable than fighting enemies, and encouraging moving up)
-    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state) + upward_reward(prev_state, state)
-    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 1000, reward)
+    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state)# + upward_reward(prev_state, state)
+    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 100, reward)
     return reward
 
 # @jax.jit
@@ -47,10 +54,7 @@ def llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state
     Mutually exclusive.
     Default is shooting.
     """
-    if isinstance(env_state, MultiRewardLogEnvState):
-        state = env_state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(env_state)
     # 0: fight, 1: collect, 2: go up
 
     # collect (always if divers are present) 
@@ -90,10 +94,7 @@ def llm_meta_policy_divers_default(network, meta_train_state, last_obs, env_stat
     """
     Mutually exclusive. Default is divers.
     """
-    if isinstance(env_state, MultiRewardLogEnvState):
-        state = env_state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(env_state)
     # 0: fight, 1: collect, 2: go up
 
     decision = jnp.ones_like(state.player_x)
@@ -126,16 +127,13 @@ def llm_meta_policy_divers_default(network, meta_train_state, last_obs, env_stat
     return q_vals
 
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
+    # Using shooting as default policy
     return llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state)
 
 # @jax.jit
 def divers_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     state = env_state
-    #TODO: is there a better way to unpack?
-    if isinstance(state, MultiRewardLogEnvState):
-        state = state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(state)
 
     # fight  (if enemy is close)
     danger_dist_sq = 40 ** 2
@@ -177,10 +175,7 @@ def divers_default_policy(network, meta_train_state, last_obs, env_state: Seaque
 # @jax.jit
 def shoot_default_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
     state = env_state
-    if isinstance(state, MultiRewardLogEnvState):
-        state = state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(state)
 
     # rescue (always if divers are present)
     divers_active = state.diver_positions[..., 2] != 0 # (128, 4)
@@ -215,8 +210,8 @@ def shoot_default_policy(network, meta_train_state, last_obs, env_state: Seaques
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
    # choose either divser_default or enemy_default
    return divers_default_policy(network, meta_train_state, last_obs, env_state) 
+#    return shoot_default_policy(network, meta_train_state, last_obs, env_state)
 
-#TODO: for typing, we may want to define CustomTrainSeaquestState here (or somewhere common) and import
 # @jax.jit
 def learned_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):#
     q_vals = network.apply(
@@ -236,3 +231,74 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Seaques
     learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
     combined_q_vals = conditional_q_vals * learned_q_vals
     return combined_q_vals
+
+
+# External rewards for evaluating alignment with goals (Not used for training)
+
+@jax.jit
+def total_rescued(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player is at surface with 6 divers
+    reward = jnp.where(
+        state.successful_rescues > prev_state.successful_rescues,
+        1.0,
+        0.0
+    )
+    return reward 
+
+@jax.jit
+def total_collected(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player is at surface with 6 divers
+    reward = jnp.where(
+        state.divers_collected > prev_state.divers_collected,
+        1.0,
+        0.0
+    )
+    return reward 
+
+@jax.jit
+def total_shot(prev_state: SeaquestState, state: SeaquestState):
+    # return 1 if player is at surface with 6 divers
+    point_diff = state.score - prev_state.score
+    # shark/sub kills are between 20 and 90 points
+    # (rescueing is >50*6==300 points)
+    enemy_killed = jnp.logical_and(
+        point_diff >= 20,
+        point_diff <= 90
+    )
+    reward = jnp.where(
+        enemy_killed,
+        1.0,
+        0.0
+    )
+    return reward
+
+@jax.jit
+def total_surface_without_dying(prev_state, state):
+    # return 1 if player reaches surface and doesn't die (at least one diver, no collision, no oxygen_empty)
+    at_surface = lambda s: s.player_y <= 47
+    close_to_surface = lambda s: s.player_y <= 50
+    newly_surfaced = jnp.logical_and(
+        at_surface(state),
+        jnp.logical_and(
+            jnp.logical_not(at_surface(prev_state)),
+            close_to_surface(prev_state)
+        )
+    )
+    has_diver = lambda s: s.divers_collected > 0
+    oxygen_empty = lambda s: s.oxygen == 0
+    surface_cond = jnp.logical_and(
+        newly_surfaced,
+        jnp.logical_and(
+            jnp.logical_not(oxygen_empty(state)), 
+            jnp.logical_not(oxygen_empty(prev_state))
+        )
+    )
+    reward = jnp.where(
+        jnp.logical_and(
+            surface_cond,
+            has_diver(state)
+        ),
+        1.0,
+        0.0
+    )
+    return reward

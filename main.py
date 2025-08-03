@@ -13,13 +13,108 @@ from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_h
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
 
-from jaxatari.wrappers import FlattenObservationWrapper, AtariWrapper
+from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, AtariWrapper
 
 
 def outer_make_train(config):
+    if config.get("ENV_NAME", None) == "Pong":
+        from jaxatari.games.jax_pong import JaxPong, PongRenderer
+        from jaxatari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.pong import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
+        from jaxatari.games.mods.pong_mods import LazyEnemyWrapper, RandomizedEnemyWrapper
 
-    if config.get("ENV_NAME", None) == "Seaquest":
-        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward
+        reward_funcs = [track_and_align, return_shot, defensive_positioning]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, randomized_enemy: bool = False, lazy_enemy: bool = False):
+            env = JaxPong(reward_funcs=reward_funcs)
+            if randomized_enemy:
+                env = RandomizedEnemyWrapper(env)
+            if lazy_enemy:
+                env = LazyEnemyWrapper(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(True, False, False) 
+        test_env = create_env(False, False, False) 
+        test_env_modif = create_env(False, False, True) # evaluate on lazy enemy 
+        renderer = PongRenderer()
+
+    elif config.get("ENV_NAME", None) == "Breakout":
+        from jaxatari.games.jax_breakout import JaxBreakout, BreakoutRenderer
+        from jaxatari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.breakout import track_and_align, return_shot, defensive_positioning, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
+        from jaxatari.games.mods.breakout_mods import SpeedMode, SmallPaddle, BigPaddle
+
+        reward_funcs = [track_and_align, return_shot, defensive_positioning]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, left_drift: bool = False, small_paddle: bool = False):
+            env = JaxBreakout(reward_funcs=reward_funcs)
+            if left_drift:
+                env = SpeedMode(env)
+            if small_paddle:
+                env = BigPaddle(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(True, False, False)
+        test_env = create_env(False, False, False)
+        test_env_modif = create_env(False, False, False) # evaluate on mod
+        renderer = BreakoutRenderer()
+
+    elif config.get("ENV_NAME", None) == "Freeway":
+        from jaxatari.games.jax_freeway import JaxFreeway, FreewayRenderer
+        from jaxatari.wrappers import MultiRewardLogWrapper
+        from symbolic_options.reward_functions.freeway import avoid_crash, go_forward, llm_meta_policy, combined_meta_policy, learned_meta_policy, conditional_meta_policy, env_reward 
+        from jaxatari.games.mods.freeway_mods import SpeedMode, StopAllCars, AlwaysStopAllCars
+
+        reward_funcs = [avoid_crash, go_forward]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward] #use env_reward for all options
+
+        sticky_actions = config.get("STICKY_ACTIONS", False)
+        episodic_life = config.get("EPISODIC_LIFE", False)
+        def create_env(train: bool = False, stop_all_cars: bool = False, stop_random_cars: bool = False, speed_mode: bool = False): 
+            env = JaxFreeway(reward_funcs=reward_funcs)
+            if stop_all_cars:
+                env = AlwaysStopAllCars(env)
+            if stop_random_cars:
+                env = StopAllCars(env)
+                # env = StopAndGo(env)
+            if speed_mode:
+                env = SpeedMode(env)
+            if train:
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+            else:
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
+            env = FlattenObservationWrapper(env)
+            env = MultiRewardLogWrapper(env)
+            return env
+        env = create_env(True, False, False, False) # train on default
+        test_env = create_env(False, False, False, False) # evaluate on default
+        test_env_modif = create_env(False, False, True, False) # evaluate on mod
+        renderer = FreewayRenderer()
+
+    elif config.get("ENV_NAME", None) == "Seaquest":
+        from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying 
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
         from symbolic_options.reward_functions.seaquest import shoot_default_policy as conditional_meta_policy #conditional_meta_policy
         from jaxatari.wrappers import MultiRewardLogWrapper
@@ -27,7 +122,10 @@ def outer_make_train(config):
         # NOTE: the order of the rewards needs to align with the LLM-based meta-policy
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
-        reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward]
+        reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
+        if config.get("NO_REWARDS", False):
+            # reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+            reward_funcs = [env_reward, env_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
@@ -42,6 +140,7 @@ def outer_make_train(config):
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
                 env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+            env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
@@ -50,11 +149,17 @@ def outer_make_train(config):
         test_env_modif = create_env(False, True)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
-        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward
+        from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected 
+        # from symbolic_options.reward_functions.kangaroo import obstacle_avoidance_reward, vertical_navigation_reward, fruit_collection_reward
         from symbolic_options.reward_functions.kangaroo import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from jaxatari.wrappers import MultiRewardLogWrapper
+        from jaxatari.wrappers import MultiRewardLogWrapper#, MultiRewardWrapper
         from jaxatari.games.mods.kangaroo_mods import DisableThreadsWrapper 
-        reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward] 
+
+        reward_funcs = [navigate_reward, handle_enemies_reward, collect_fruits_reward, reached_platform_level, enemies_killed, fruits_collected] 
+        # reward_funcs = [vertical_navigation_reward, obstacle_avoidance_reward, fruit_collection_reward, reached_platform_level, enemies_killed, fruits_collected]
+        if config.get("NO_REWARDS", False):
+            # reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
+            reward_funcs = [env_reward, env_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected] 
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
@@ -63,27 +168,18 @@ def outer_make_train(config):
             if no_enemies:
                 env = DisableThreadsWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, first_fire=False)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, first_fire=False)
+            env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
         test_env = create_env(False, False)
-        # if config.get("TEST_MODIFS", False):
         test_env_modif = create_env(False, True)
         renderer = KangarooRenderer()
     # only quick PQN test:
-    elif config.get("ENV_NAME", None) == "Pong":
-        from jaxatari.games.jax_pong import JaxPong, PongRenderer
-        from jaxatari.wrappers import LogWrapper
-        env = JaxPong()
-        renderer = PongRenderer()
-        env = AtariWrapper(env, sticky_actions=False)
-        env = FlattenObservationWrapper(env)
-        env = LogWrapper(env)
-
     elif "Craftax" in config.get("ENV_NAME", None):
         from craftax.craftax_env import make_craftax_env_from_name
         from symbolic_options.purejaxql.craftax_wrappers import (
@@ -94,12 +190,14 @@ def outer_make_train(config):
         )
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
         from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper, NoNecessitiesWrapper
-        from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore
+        from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper, NoNecessitiesWrapper, ExplorationMapWrapper
+        from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, env_reward
         from symbolic_options.utils.video_recorder import CraftaxClassicRenderer
 
         # reward_funcs_craftax = [survival_reward, combat_reward, resource_collection_reward, crafting_reward, level_progression_reward, explore]
         reward_funcs = [survival_reward, combat_reward, crafting_reward, resource_collection_reward, explore]
+        if config.get("NO_REWARDS", False):
+            reward_funcs = [env_reward, env_reward, env_reward, env_reward, env_reward] #use env_reward for all options
         # reward_funcs = []
         # renderer = CraftaxRenderer()
         renderer = CraftaxClassicRenderer()
@@ -111,6 +209,7 @@ def outer_make_train(config):
         def create_env(env, train: bool = False, modification: bool = False):
             if modification:
                 env = NoNecessitiesWrapper(env)
+            env = ExplorationMapWrapper(env) 
             if len(reward_funcs) > 0:
                 env = MultiRewardWrapper(env, reward_funcs)
                 env = MultiRewardLogWrapper(env)
@@ -276,7 +375,7 @@ def single_run(config):#
 
 def tune(default_config):
     """Hyperparameter sweep with wandb."""
-
+    print("Running hyperparameter tuning with wandb...")
     default_config = {**default_config, **default_config["alg"]}
     print(default_config)
     alg_name = default_config.get("ALG_NAME", "pqn")
@@ -290,23 +389,32 @@ def tune(default_config):
             config[k] = v
 
         print("running experiment with params:", config)
-
         rng = jax.random.PRNGKey(config["SEED"])
         rngs = jax.random.split(rng, config["NUM_SEEDS"])
+        params, batch_stats = load_network_params(config)
         train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
-        outs = jax.block_until_ready(train_vjit(rngs))
+        outs = jax.block_until_ready(train_vjit(rngs, params, batch_stats))
+
 
     sweep_config = {
         "name": f"{alg_name}_{env_name}",
         "method": "bayes",
         "metric": {
-            "name": "test_returned_episode_returns",
+            "name": "test/returned_episode_env_returns",
             "goal": "maximize",
         },
         "parameters": {
             "LR": {
                 "min": 0.00001,
                 "max": 0.001,
+            },
+            "EPS_FINISH": {
+                "min": 0.001,
+                "max": 0.1,
+            },
+            "EPS_DECAY": {
+                "min": 0.1,
+                "max": 0.7,
             },
         },
     }
@@ -315,7 +423,7 @@ def tune(default_config):
     sweep_id = wandb.sweep(
         sweep_config, entity=default_config["ENTITY"], project=default_config["PROJECT"]
     )
-    wandb.agent(sweep_id, wrapped_make_train, count=1000)
+    wandb.agent(sweep_id, wrapped_make_train, count=100)
 
 
 @hydra.main(version_base=None, config_path="./src/symbolic_options/config", config_name="config")

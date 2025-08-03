@@ -37,12 +37,12 @@ class QNetwork(nn.Module):
 
         for l in range(self.num_layers):
             x = nn.Dense(self.hidden_size)(x)
-            x = nn.Dense(self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
+            # x = nn.Dense(self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
             x = normalize(x)
             x = nn.relu(x)
 
         x = nn.Dense(self.action_dim)(x)
-        x = nn.Dense(self.action_dim, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
+        # x = nn.Dense(self.action_dim, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
 
         return x
 
@@ -96,23 +96,23 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    vmap_step = lambda env_state, action: jax.vmap(
         env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    test_vmap_step = lambda env_state, action: jax.vmap(
         test_env.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     modif_test_vmap_reset = lambda n_envs: lambda rng: jax.vmap(test_env_modif.reset)(
         jax.random.split(rng, n_envs)#, env_params
     )
-    modif_test_vmap_step = lambda n_envs: lambda rng, env_state, action: jax.vmap(
+    modif_test_vmap_step = lambda env_state, action: jax.vmap(
         test_env_modif.step#, in_axes=(0, 0, None)
-    )(jax.random.split(rng, n_envs), env_state, action)#, env_params)
+    )(env_state, action)#, env_params)
 
     # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):
@@ -199,9 +199,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
                 eps = jnp.full(config["NUM_ENVS"], eps_scheduler(train_state.n_updates))
                 new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
 
-                new_obs, new_env_state, reward, new_done, info = vmap_step(
-                    config["NUM_ENVS"]
-                )(rng_s, env_state, new_action)
+                new_obs, new_env_state, reward, new_done, info = vmap_step(env_state, new_action)
 
                 transition = Transition(
                     obs=last_obs,
@@ -407,8 +405,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
                 )
                 new_obs, new_env_state, reward, done, info = jax.lax.cond(
                     modif,
-                    lambda _: modif_test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
-                    lambda _: test_vmap_step(config["TEST_NUM_ENVS"])(_rng, env_state, action),
+                    lambda _: modif_test_vmap_step(env_state, action),
+                    lambda _: test_vmap_step(env_state, action),
                     operand=None,
                 ) 
                 # new_obs, new_env_state, reward, done, info = test_vmap_step(

@@ -7,9 +7,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pygame
-from jaxatari.renderers import AtraJaxisRenderer, PyGameRenderer
-from jaxatari.wrappers import AtariState, MultiRewardLogEnvState as JaxtariMultiRewardLogEnvState
-from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
+from jaxatari.renderers import JAXGameRenderer, PyGameRenderer
+from jaxatari.wrappers import AtariState, MultiRewardLogState as JaxtariMultiRewardLogState
+from symbolic_options.purejaxql.craftax_wrappers import ExplorationState, MultiRewardLogEnvState as CraftaxMultiRewardLogEnvState
 
 import wandb
 
@@ -132,21 +132,26 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
     print("Rendering video...")
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
-    if isinstance(states, JaxtariMultiRewardLogEnvState) or isinstance(states, CraftaxMultiRewardLogEnvState):
+    if isinstance(states, JaxtariMultiRewardLogState):
+        states = states.atari_state
+    elif isinstance(states, CraftaxMultiRewardLogEnvState):
         states = states.env_state
+
     if isinstance(states, AtariState):
+        states = states.env_state
+    elif isinstance(states, ExplorationState):
         states = states.env_state
 
     # num_states is where the first done is True
     num_states = jnp.argmax(dones)
     # or len of the first array of the states pytree
     if num_states == 0:
-        num_states = len(states[0])
+        num_states = len(states[-1])
 
     # select every 4th frame (and only the first num_states)
     # states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states][::4], states)
     states_reduced = jax.tree_util.tree_map(lambda x: x[:num_states], states)
-    if isinstance(renderer, AtraJaxisRenderer) or isinstance(renderer, CraftaxRenderer):
+    if isinstance(renderer, JAXGameRenderer) or isinstance(renderer, CraftaxRenderer):
         rasters = jax.vmap(renderer.render)(states_reduced)
         frames = np.array(rasters, dtype=np.uint8)
     elif isinstance(renderer, PyGameRenderer):
@@ -167,18 +172,20 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
         frames = np.array(frames, dtype=np.uint8)
 
     # for jaxtari
-    if isinstance(renderer, AtraJaxisRenderer) or isinstance(renderer, PyGameRenderer):
+    if isinstance(renderer, JAXGameRenderer) or isinstance(renderer, PyGameRenderer):
         # shape currently is (N, W, H, 3)
-        # but should be (N, 3, H, W)
-        frames = np.transpose(frames, (0, 3, 2, 1))
+        # but should be (N, 3, W, H)
+        frames = np.transpose(frames, (0, 3, 1, 2))
     else: # for craftax
         # shape currently is (N, H, W, 3)
-        # but should be (N, 3, H, W) 
-        frames = np.transpose(frames, (0, 3, 1, 2))
+        # but should be (N, 3, W, H) 
+        frames = np.transpose(frames, (0, 3, 2, 1))
 
     if active_agents is not None:
         sidebar_renderer = SidebarRenderer(frames[0].shape)
         # (N, 3, H, W + sidebar_width)
+        # new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
+        # (N, 3, W, H + sidebar_width)
         new_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2], frames.shape[3] + sidebar_renderer.sidebar_width), dtype=np.uint8)
         for i in range(len(frames)):
             # add sidebar to each frame
