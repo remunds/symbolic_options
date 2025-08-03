@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import lax
 import jax
 from enum import IntEnum
-from jaxatari.games.jax_breakout import BreakoutState, BreakoutConstants #PLAYER_SIZE, PLAYER_SIZE_SMALL, PLAYER_START_X, PLAYER_START_Y
+from jaxatari.games.jax_breakout import BreakoutState, BreakoutConstants
 
 def unpack(state):
     while not isinstance(state, BreakoutState):
@@ -37,24 +37,6 @@ def track_and_align(prev: BreakoutState, curr: BreakoutState) -> float:
     distance = abs((curr.player_x + player_width / 2) - curr.ball_x)
     reward = jnp.where(distance < 3, 1.0, 0.0)
     return reward
-
-# def return_shot(prev: BreakoutState, curr: BreakoutState) -> float:
-#     """
-#     Binary reward ∈ {0, 1} if paddle and ball align closely at contact range.
-#     """
-#     y_close = abs(curr.ball_y - PLAYER_START_Y) < 1.5 * PLAYER_SIZE[1]
-#     player_width = jnp.where(
-#         curr.small_paddle,
-#         PLAYER_SIZE_SMALL[0],
-#         PLAYER_SIZE[0]
-#     )
-#     x_align = abs(curr.ball_x - (curr.player_x + player_width / 2)) < 0.5 * PLAYER_SIZE[0]
-#     # ball_speed = abs(curr.ball_x - prev.ball_x) * 0.1
-#     # reward alignment + ball speed if ball is close to paddle
-#     # reward = jnp.where(y_close & x_align, 1.0 + ball_speed, 0.0)
-#     reward = jnp.where(y_close & x_align, 1.0, 0.0)
-
-#     return reward
 
 def return_shot(prev: BreakoutState, curr: BreakoutState) -> float:
     """

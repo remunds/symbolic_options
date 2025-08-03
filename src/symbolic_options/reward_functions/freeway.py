@@ -44,39 +44,11 @@ def avoid_crash(prev: FreewayState, curr: FreewayState) -> float:
     # movement = curr.chicken_y < prev.chicken_y
     return jnp.where(collision_occurred, -1.0, 0.0)
 
-    # # maximize distance to closest car 
-    # # cars: [N, 2] (x, y) coordinates of cars
-    # distance_y = jnp.abs(curr.chicken_y - curr.cars[..., 1])
-    # distance_x = jnp.abs(FreewayConstants().chicken_x - curr.cars[..., 0])
-    # total_distance = jnp.sqrt(distance_x**2 + distance_y**2)
-    # min_distance = jnp.min(total_distance, axis=-1) # over all cars
-
-    # # prev_distance_y = jnp.abs(prev.chicken_y - prev.cars[..., 1])
-    # # prev_distance_x = jnp.abs(FreewayConstants().chicken_x - prev.cars[..., 0])
-    # # prev_total_distance = jnp.sqrt(prev_distance_x**2 + prev_distance_y**2)
-    # # prev_min_distance = jnp.min(prev_total_distance, axis=-1) # over all cars
-
-    # # reward = jnp.where(
-    # #     min_distance > prev_min_distance,
-    # #     1.0, # moved away from car
-    # #     0.0
-    # # )
-    # # env_reward = curr.score - prev.score
-    # # return env_reward + reward/10
-
-    # # chatgpt reward: 1-exp(-d/theta)
-    # # reward = 1-jnp.exp(-min_distance / 0.1)
-    # reward = 1-jnp.exp(-min_distance/1000)
-    # reward = jnp.where(collision_occurred, -10.0, reward)  # penalize collisions
-    # return reward
-
 def go_forward(prev: FreewayState, curr: FreewayState) -> float:
     # reward for moving forward
     # chicken_y is the vertical position of the chicken
     # if chicken_y is greater than previous, it moved forward
     reward = jnp.where(curr.chicken_y < prev.chicken_y, 1.0, 0.0)
-    # env_reward = curr.score - prev.score
-    # return env_reward + reward / 100
     return reward
 
 

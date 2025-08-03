@@ -335,8 +335,6 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     transitions.next_obs[-1],
                     train=False,
                 )
-                #TODO: think this is a fix
-                # last_q = jnp.max(last_q, axis=-1)
                 last_q = last_q[..., state_idx]  # select the q_val of the active agent
 
                 def _get_target(lambda_returns_and_next_q, transition):
@@ -354,8 +352,6 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     next_q = jax.lax.cond(
                         state_idx == num_agents,
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
-                        # lambda _: jnp.max(transition.q_val, axis=-1),
-                        #TODO: same fix as before
                         lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
                         operand=None,
                     )
@@ -425,8 +421,6 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                                 ).squeeze(axis=-1),
                                 operand=None,
                             ) 
-                            # TODO: for meta, check if chosen_action_qvals and target are multiplied with the rule
-                            # chosen_action_qvals: qvals[active_agent], q_vals come from just the network(!)
                             loss = 0.5 * jnp.square(chosen_action_qvals - target).mean()
 
                             return loss, (updates, chosen_action_qvals)

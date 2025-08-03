@@ -13,29 +13,19 @@ def unpack(state):
     return state
 
 @jax.jit
-def idle_reward(prev_state: SeaquestState, state: SeaquestState):
-    # punish dying give 0.001 else
-    reward = jnp.where(state.lives < prev_state.lives, -1, 0.001)
-    return reward
-
-@jax.jit
 def env_reward(prev_state: SeaquestState, state: SeaquestState):
     reward = JaxSeaquest()._get_env_reward(prev_state, state)
     return reward
 
 @jax.jit
 def collect_divers_reward(prev_state: SeaquestState, state: SeaquestState):
-    # reward = jnp.where(state.divers_collected > prev_state.divers_collected, 1, 0)
-    # TODO: test if this is better (higher reward for collecting more)
+    # return +1 if new diver was collected
     reward = jnp.where(state.divers_collected > prev_state.divers_collected, state.divers_collected, 0)
-    # dying punishment
-    # TODO: Test if required
-    # reward = jnp.where(state.lives < prev_state.lives, -1, reward)
     return reward
 
 @jax.jit
 def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
-    # return 1 if an enemy was killed
+    # return +1 if an enemy was killed
     # (in this case if the score increased)
     # NOTE: could be adapted (may require adding enemy_kills to state)
     reward = jnp.where(state.score > prev_state.score, 1, 0)
@@ -45,12 +35,13 @@ def fight_enemies_reward(prev_state: SeaquestState, state: SeaquestState):
 
 @jax.jit
 def upward_reward(prev_state: SeaquestState, state: SeaquestState):
-    # return 1 if player is replenishing oxygen 
+    # return +0.1 if player is currently replenishing oxygen 
     reward = jnp.where(state.oxygen > prev_state.oxygen, 0.1, 0)
     return reward
 
 @jax.jit
 def shaped_reward(prev_state: SeaquestState, state: SeaquestState):
+    #NOTE: Not in use in final runs
     # combine all rewards (+surface with 6 divers reward)
     #TODO: this is a try of balancing the rewards (make collecting divers more valuable than fighting enemies, and encouraging moving up)
     reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state)# + upward_reward(prev_state, state)
@@ -103,10 +94,7 @@ def llm_meta_policy_divers_default(network, meta_train_state, last_obs, env_stat
     """
     Mutually exclusive. Default is divers.
     """
-    if isinstance(env_state, MultiRewardLogState):
-        state = env_state.env_state
-    if isinstance(state, AtariState):
-        state = state.env_state
+    state = unpack(env_state)
     # 0: fight, 1: collect, 2: go up
 
     decision = jnp.ones_like(state.player_x)
@@ -139,6 +127,7 @@ def llm_meta_policy_divers_default(network, meta_train_state, last_obs, env_stat
     return q_vals
 
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
+    # Using shooting as default policy
     return llm_meta_policy_shoot_default(network, meta_train_state, last_obs, env_state)
 
 # @jax.jit
@@ -223,7 +212,6 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Seaq
    return divers_default_policy(network, meta_train_state, last_obs, env_state) 
 #    return shoot_default_policy(network, meta_train_state, last_obs, env_state)
 
-#TODO: for typing, we may want to define CustomTrainSeaquestState here (or somewhere common) and import
 # @jax.jit
 def learned_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):#
     q_vals = network.apply(
@@ -245,7 +233,7 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Seaques
     return combined_q_vals
 
 
-# External rewards for evaluating alignment with goals
+# External rewards for evaluating alignment with goals (Not used for training)
 
 @jax.jit
 def total_rescued(prev_state: SeaquestState, state: SeaquestState):
