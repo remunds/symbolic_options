@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from functools import partial
 from typing import Any
 from rtpt import RTPT
 
@@ -8,26 +9,57 @@ import chex
 import optax
 import flax.linen as nn
 from flax.training.train_state import TrainState
+
 import wandb
 
 from symbolic_options.purejaxql.batch_renorm import BatchRenorm
 from symbolic_options.utils.video_recorder import video_callback
 
-class QNetwork(nn.Module):
+
+class ScannedRNN(nn.Module):
+
+    @partial(
+        nn.scan,
+        variable_broadcast="params",
+        in_axes=0,
+        out_axes=0,
+        split_rngs={"params": False},
+    )
+    @nn.compact
+    def __call__(self, carry, x):
+        """Applies the module."""
+        rnn_state = carry
+        ins, resets = x
+        hidden_size = rnn_state[0].shape[-1]
+
+        init_rnn_state = self.initialize_carry(hidden_size, *resets.shape)
+        rnn_state = jax.tree.map(
+            lambda init, old: jnp.where(resets[:, np.newaxis], init, old),
+            init_rnn_state,
+            rnn_state,
+        )
+
+        new_rnn_state, y = nn.OptimizedLSTMCell(hidden_size)(rnn_state, ins)
+        return new_rnn_state, y
+
+    @staticmethod
+    def initialize_carry(hidden_size, *batch_size):
+        # Use a dummy key since the default state init fn is just zeros.
+        return nn.OptimizedLSTMCell(hidden_size, parent=None).initialize_carry(
+            jax.random.PRNGKey(0), (*batch_size, hidden_size)
+        )
+
+
+class RNNQNetwork(nn.Module):
     action_dim: int
     hidden_size: int = 512
     num_layers: int = 4
-    norm_type: str = "batch_norm"
+    num_rnn_layers: int = 1
     norm_input: bool = False
+    norm_type: str = "layer_norm"
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray, train: bool):
-        if self.norm_input:
-            x = nn.BatchNorm(use_running_average=not train)(x)
-        else:
-            # dummy normalize input for global compatibility
-            x_dummy = nn.BatchNorm(use_running_average=not train)(x)
-
+    def __call__(self, hidden, x, done, last_action, train: bool = False):
         if self.norm_type == "layer_norm":
             normalize = lambda x: nn.LayerNorm()(x)
         elif self.norm_type == "batch_norm":
@@ -35,24 +67,44 @@ class QNetwork(nn.Module):
         else:
             normalize = lambda x: x
 
+        if self.norm_input:
+            x = BatchRenorm(use_running_average=not train)(x)
+        else:
+            # dummy normalize input in any case for global compatibility
+            x_dummy = BatchRenorm(use_running_average=not train)(x)
+
         for l in range(self.num_layers):
             x = nn.Dense(self.hidden_size)(x)
             x = normalize(x)
             x = nn.relu(x)
 
-        x = nn.Dense(self.action_dim)(x)
+        new_hidden = []
+        for i in range(self.num_rnn_layers):
+            rnn_in = (x, done)
+            hidden_aux, x = ScannedRNN()(hidden[i], rnn_in)
+            new_hidden.append(hidden_aux)
 
-        return x
+        q_vals = nn.Dense(self.action_dim)(x)
+
+        return new_hidden, q_vals
+
+    def initialize_carry(self, *batch_size):
+        return [
+            ScannedRNN.initialize_carry(self.hidden_size, *batch_size)
+            for _ in range(self.num_rnn_layers)
+        ]
 
 
 @chex.dataclass(frozen=True)
 class Transition:
+    last_hs: chex.Array
     obs: chex.Array
     action: chex.Array
     agent: chex.Array
     rewards: chex.Array
     done: chex.Array
-    next_obs: chex.Array
+    last_done: chex.Array
+    last_action: chex.Array
     q_val: chex.Array
     meta_q_val: chex.Array
 
@@ -68,8 +120,9 @@ def rtpt_callback():
     global rtpt
     rtpt.step()
 
-def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, meta_policy_llm, renderer):# -> Callable[..., dict[str, Any]]:
+def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, meta_policy_llm, renderer):
     global rtpt
+
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
     )
@@ -82,10 +135,8 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
 
-
     rtpt = RTPT(name_initials=config["NAME_INITIALS"], experiment_name=config["ALG_NAME"], max_iterations=config["NUM_UPDATES"])
     rtpt.start()
-
 
     # epsilon-greedy exploration
     def eps_greedy_exploration(rng, q_vals, eps):
@@ -102,6 +153,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
             greedy_actions,
         )
         return chosed_actions
+
 
     def train(rng, params, batch_stats):
 
@@ -138,17 +190,25 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
         lr_meta = lr_scheduler_meta if config.get("LR_LINEAR_DECAY", False) else config["LR"]
 
         # INIT NETWORK AND OPTIMIZER
-        network = QNetwork(
+        network = RNNQNetwork(
             action_dim=env.action_space(env_params).n,
             hidden_size=config.get("HIDDEN_SIZE", 128),
             num_layers=config.get("NUM_LAYERS", 2),
+            num_rnn_layers=config.get("NUM_RNN_LAYERS", 1),
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
 
-        def create_agent(rng, params, batch_stats, network: QNetwork, lr):
-            init_x = jnp.zeros((1, *env.observation_space(env_params).shape))
-            network_variables = network.init(rng, init_x, train=False)
+        def create_agent(rng, params, batch_stats, network, lr):
+            init_x = (
+                jnp.zeros(
+                    (1, 1, *env.observation_space(env_params).shape)
+                ),  # (time_step, batch_size, obs_size)
+                jnp.zeros((1, 1)),  # (time_step, batch size)
+                jnp.zeros((1, 1)),  # (time_step, batch size)
+            )  # (obs, dones, last_actions)
+            init_hs = network.initialize_carry(1)  # (batch_size, hidden_dim)
+            network_variables = network.init(rng, init_hs, *init_x, train=False)
             tx = optax.chain(
                 optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
                 optax.radam(learning_rate=lr),
@@ -165,14 +225,18 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
         num_agents = config.get("NUM_AGENTS", len(env.reward_funcs))
         if num_agents == 0:
             num_agents = 1
+        if config.get("META_SHAPED_REWARD", False):
+            num_agents -= 1 # remove one if shaped reward is given
 
         # create multiple agents
-        # networks.append(meta_network)
         rng_keys = jax.random.split(rng, num_agents)
         train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, 0, None, None))(rng_keys, params, batch_stats, network, lr)
 
-        meta_network = QNetwork(
+        meta_network = RNNQNetwork(
             action_dim=num_agents,
+            hidden_size=config.get("HIDDEN_SIZE", 128),
+            num_layers=config.get("NUM_LAYERS", 2),
+            num_rnn_layers=config.get("NUM_RNN_LAYERS", 1),
             norm_type=config["NORM_TYPE"],
             norm_input=config.get("NORM_INPUT", False),
         )
@@ -180,46 +244,55 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
 
         # TRAINING LOOP
         def _update_step(runner_state, unused):
-            
-            train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, rng = runner_state
+
+            train_states, memory_transitions, meta_train_state, expl_state, test_metrics, test_metrics_modif, rng = runner_state
 
             # SAMPLE PHASE
             def _step_env(carry, _):
-                # use the meta-policy for stepping the environment 
-                last_obs, env_state, rng = carry
+                hs, last_obs, last_done, last_action, env_state, rng = carry
                 rng, rng_a, rng_s = jax.random.split(rng, 3)
 
-                def compute_actions(train_state):
-                    q_vals = network.apply(
+                _obs = last_obs[np.newaxis]  # (1 (dummy time), num_envs, obs_size)
+                _done = last_done[np.newaxis]  # (1 (dummy time), num_envs)
+                _last_action = last_action[np.newaxis]  # (1 (dummy time), num_envs)
+
+                def compute_q_values(train_state, hs):
+                    new_hs, q_vals = network.apply(
                         {
                             "params": train_state.params,
                             "batch_stats": train_state.batch_stats,
                         },
-                        last_obs,
+                        hs,
+                        _obs,
+                        _done,
+                        _last_action,
                         train=False,
-                    )
-                    # different eps for each env
+                    )  # (num_envs, hidden_size), (1, num_envs, num_actions)
+                    q_vals = q_vals.squeeze(axis=0)
+                    return new_hs, q_vals
+
+                all_hs, all_q_vals = jax.vmap(compute_q_values)(train_states, hs)
+
+                def compute_actions(q_vals, train_state):
                     _rngs = jax.random.split(rng_a, config["NUM_ENVS"])
                     eps = jnp.full(config["NUM_ENVS"], eps_scheduler(train_state.n_updates))
                     new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
-                    return new_action, q_vals
+                    return new_action
 
-                all_actions, all_q_vals = jax.vmap(compute_actions)(train_states)
+                all_actions = jax.vmap(compute_actions)(all_q_vals, train_states)
 
                 meta_policy_mode = config.get("META_POLICY", "llm")
                 llm_pretrain = config.get("LLM_PRETRAIN", False)
                 random_pretrain = config.get("RANDOM_PRETRAIN", False)
 
-                # Combine Q-values depending on mode
                 def handle_conditional():
                     active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
-                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1)  # (128, 3)
-                    max_q_vals = jnp.transpose(jnp.max(all_q_vals, axis=-1))    # (128, 3)
-                    return agent_probs * max_q_vals                              # (128, 3)
+                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1)
+                    max_q_vals = jnp.transpose(jnp.max(all_q_vals, axis=-1))
+                    return agent_probs * max_q_vals
 
                 def handle_llm_pretrain():
-                    # llm pretrainining requires access to both, llm meta-policy and combined
-                    llm_q= meta_policy_llm(meta_network, meta_train_state, last_obs, env_state)
+                    llm_q = meta_policy_llm(meta_network, meta_train_state, last_obs, env_state)
                     both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state)
                     return jax.lax.cond(
                         train_states.n_updates[0] < config["PRETRAIN_LEN"],
@@ -229,7 +302,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     )
 
                 def handle_random_pretrain():
-                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state) 
+                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state)
                     random_q = jax.random.randint(
                         rng_a, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
                     ).astype(jnp.float32)
@@ -241,24 +314,22 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     )
 
                 def handle_default():
-                    return meta_policy(meta_network, meta_train_state, last_obs, env_state) 
+                    return meta_policy(meta_network, meta_train_state, last_obs, env_state)
 
-                # Decide which Q-combination strategy to apply
                 combined_q = jax.lax.switch(
                     jnp.array([
                         llm_pretrain,
                         random_pretrain,
                         meta_policy_mode == "conditional",
-                        True # default if nothing else is true
-                    ], dtype=jnp.bool_).argmax(),  # priority order
+                        True
+                    ], dtype=jnp.bool_).argmax(),
                     [handle_llm_pretrain, handle_random_pretrain, handle_conditional, handle_default],
                 )
 
-                # Now select active agent — greedy vs exploratory
                 use_greedy = config.get("META_GREEDY", True)
 
                 def select_greedy(_):
-                    return jnp.argmax(combined_q, axis=-1)  # (128,)
+                    return jnp.argmax(combined_q, axis=-1)
 
                 def select_exploratory(_):
                     rng_split = jax.random.split(rng_s, config["NUM_ENVS"])
@@ -272,32 +343,35 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     operand=None
                 )
 
-                # select the q_vals and action of the active agent
-                new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])] # (128,)
+                new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])]
 
                 new_obs, new_env_state, reward, new_done, info = env.step(
                     rng_s, env_state, new_action, env_params
                 )
 
-                # add reward to end -> (128,N_rews+1)
-                rewards = info.pop("all_rewards") #(N_envs, N_rews)
+                rewards = info.pop("all_rewards")
                 rewards = jnp.concatenate((rewards, reward[:, None]), axis=1)
 
                 transition = Transition(
+                    last_hs=hs,
                     obs=last_obs,
                     action=new_action,
                     agent=active_agent,
-                    rewards=config.get("REW_SCALE", 1)*rewards,
+                    rewards=config.get("REW_SCALE", 1) * rewards,
                     done=new_done,
-                    next_obs=new_obs,
+                    last_done=last_done,
+                    last_action=last_action,
                     q_val=all_q_vals,
                     meta_q_val=combined_q
                 )
-                return (new_obs, new_env_state, rng), (transition, info)
+                new_hs = all_hs[active_agent, jnp.arange(config["NUM_ENVS"])]
+                return (new_hs, new_obs, new_done, new_action, new_env_state, rng), (
+                    transition,
+                    info,
+                )
 
             # step the env
             rng, _rng = jax.random.split(rng)
-            # prev_rewards = jnp.zeros((config["NUM_ENVS"], num_agents))
             (*expl_state, rng), (transitions, infos) = jax.lax.scan(
                 _step_env,
                 (*expl_state, _rng),
@@ -306,92 +380,104 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
             )
             expl_state = tuple(expl_state)
 
-            def _update_agent(train_state, state_idx, rng, network): 
-                # Update each network separately
+            # insert the transitions into the memory
+            memory_transitions = jax.tree.map(
+                lambda x, y: jnp.concatenate([x[config["NUM_STEPS"] :], y], axis=0),
+                memory_transitions,
+                transitions,
+            )
 
+            def _update_agent(train_state, state_idx, rng, network):
                 train_state = train_state.replace(
                     timesteps=train_state.timesteps
                     + config["NUM_STEPS"] * config["NUM_ENVS"]
-                )  # update timesteps count
-
-                last_q = network.apply(
-                    {
-                        "params": train_state.params,
-                        "batch_stats": train_state.batch_stats,
-                    },
-                    transitions.next_obs[-1],
-                    train=False,
                 )
-                last_q = last_q[..., state_idx]  # select the q_val of the active agent
-
-                def _get_target(lambda_returns_and_next_q, transition):
-                    lambda_returns, next_q = lambda_returns_and_next_q
-                    target_bootstrap = (
-                        transition.rewards[... , state_idx] + config["GAMMA"] * (1 - transition.done) * next_q
-                    )
-                    delta = lambda_returns - next_q
-                    lambda_returns = (
-                        target_bootstrap + config["GAMMA"] * config["LAMBDA"] * delta
-                    )
-                    lambda_returns = (
-                        1 - transition.done
-                    ) * lambda_returns + transition.done * transition.rewards[... , state_idx]
-                    next_q = jax.lax.cond(
-                        state_idx == num_agents,
-                        lambda _: jnp.max(transition.meta_q_val, axis=-1),
-                        lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
-                        operand=None,
-                    )
-                    return (lambda_returns, next_q), lambda_returns
-
-                last_q = last_q * (1 - transitions.done[-1])
-                lambda_returns = transitions.rewards[-1, :, state_idx] + config["GAMMA"] * last_q
-                _, targets = jax.lax.scan(
-                    _get_target,
-                    (lambda_returns, last_q),
-                    jax.tree.map(lambda x: x[:-1], transitions),
-                    reverse=True,
-                )
-                lambda_targets = jnp.concatenate((targets, lambda_returns[np.newaxis]))
-
-                # NETWORKS UPDATE
+                            # NETWORKS UPDATE
                 def _learn_epoch(carry, _):
                     train_state, rng = carry
 
-                    def _learn_phase(carry, minibatch_and_target):
+                    def _learn_phase(carry, minibatch):
+
+                        # minibatch shape: num_steps, batch_size, ...
+                        # with batch_size = num_envs/num_minibatches
 
                         train_state, rng = carry
-                        minibatch, target = minibatch_and_target
+                        hs = jax.tree.map(lambda x: x[0], minibatch.last_hs)  # hs of oldest step (batch_size, hidden_size)
+                        agent_in = (
+                            minibatch.obs,
+                            minibatch.last_done,
+                            minibatch.last_action,
+                        )
+
+                        def _compute_targets(last_q, q_vals, meta_q_vals, rewards, done):
+                            def _get_target(lambda_returns_and_next_q, rew_q_done):
+                                rewards, q, meta_q, done = rew_q_done
+                                lambda_returns, next_q = lambda_returns_and_next_q
+                                target_bootstrap = (
+                                    rewards[..., state_idx] + config["GAMMA"] * (1 - done) * next_q
+                                )
+                                delta = lambda_returns - next_q
+                                lambda_returns = (
+                                    target_bootstrap
+                                    + config["GAMMA"] * config["LAMBDA"] * delta
+                                )
+                                lambda_returns = (1 - done) * lambda_returns + done * rewards[..., state_idx]
+                                # next_q = jnp.max(q, axis=-1) # this would be q of best action
+                                # instead, we use the q of the currently active option (or meta)
+                                next_q = jax.lax.cond(
+                                    state_idx == num_agents,
+                                    lambda _: jnp.max(meta_q, axis=-1),
+                                    lambda _: jnp.max(q[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
+                                    operand=None,
+                                )
+                                return (lambda_returns, next_q), lambda_returns
+
+                            lambda_returns = (
+                                rewards[-1, :, state_idx] + config["GAMMA"] * (1 - done[-1]) * last_q
+                            )
+                            last_q = last_q[..., state_idx]  # select q of the active agent
+                            last_q = jnp.max(q_vals[-1], axis=-1)
+                            _, targets = jax.lax.scan(
+                                _get_target,
+                                (lambda_returns, last_q),
+                                jax.tree.map(lambda x: x[:-1], (rewards, q_vals, done)),
+                                reverse=True,
+                            )
+                            targets = jnp.concatenate([targets, lambda_returns[np.newaxis]])
+                            return targets
 
                         def _loss_fn(params):
-                            if config.get("Q_LAMBDA", False):
-                                q_vals, updates = network.apply(
-                                    {
-                                        "params": params,
-                                        "batch_stats": train_state.batch_stats,
-                                    },
-                                    minibatch.obs,
-                                    train=True,
-                                    mutable=["batch_stats"],
-                                )
-                            else:
-                                # if not using q_lambda, re-pass the next_obs through the network to compute target
-                                all_q_vals, updates = network.apply(
-                                    {
-                                        "params": params,
-                                        "batch_stats": train_state.batch_stats,
-                                    },
-                                    jnp.concatenate((minibatch.obs, minibatch.next_obs)),
-                                    train=True,
-                                    mutable=["batch_stats"],
-                                )
-                                q_vals, q_next = jnp.split(all_q_vals, 2)
-                                q_next = jax.lax.stop_gradient(q_next)
-                                q_next = jnp.max(q_next, axis=-1)  # (batch_size,)
-                                target = (
-                                    minibatch.rewards[..., state_idx]
-                                    + (1 - minibatch.done) * config["GAMMA"] * q_next
-                                )
+                            (_, q_vals), updates = partial(
+                                network.apply, train=True, mutable=["batch_stats"]
+                            )(
+                                {"params": params, "batch_stats": train_state.batch_stats},
+                                hs,
+                                *agent_in,
+                            )  # (num_steps, batch_size, num_actions)
+
+                            # lambda returns are computed using NUM_STEPS as the horizon, and optimizing from t=0 to NUM_STEPS-1
+                            target_q_vals = jax.lax.stop_gradient(q_vals)
+                            last_q = target_q_vals[-1].max(axis=-1) # would be max_q_vals of prev last step
+                            #TODO: change last_q to be the q of the active agent, then adapt in compute_targets
+                            target = _compute_targets(
+                                last_q,  # q_vals at t=NUM_STEPS-1
+                                target_q_vals[:-1],
+                                minibatch.rewards[:-1],
+                                minibatch.done[:-1],
+                            ).reshape(
+                                -1
+                            )  # (num_steps-1*batch_size,)
+
+                            # chosen_action_qvals = jnp.take_along_axis(
+                            #     q_vals,
+                            #     jnp.expand_dims(minibatch.action, axis=-1),
+                            #     axis=-1,
+                            # ).squeeze(
+                            #     axis=-1
+                            # )  # (num_steps, num_agents, batch_size,)
+                            # chosen_action_qvals = chosen_action_qvals[:-1].reshape(
+                            #     -1
+                            # )  # (num_steps-1*batch_size,)
 
                             chosen_action_qvals = jax.lax.cond(
                                 state_idx == num_agents,
@@ -407,6 +493,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                                 ).squeeze(axis=-1),
                                 operand=None,
                             ) 
+
                             loss = 0.5 * jnp.square(chosen_action_qvals - target).mean()
 
                             return loss, (updates, chosen_action_qvals)
@@ -422,29 +509,97 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                         return (train_state, rng), (loss, qvals)
 
                     def preprocess_transition(x, rng):
+                        # x: (num_steps, num_envs, ...)
+                        x = jax.random.permutation(
+                            rng, x, axis=1
+                        )  # shuffle the transitions
                         x = x.reshape(
-                            -1, *x.shape[2:]
-                        )  # num_steps*num_envs (batch_size), ...
-                        x = jax.random.permutation(rng, x)  # shuffle the transitions
-                        x = x.reshape(
-                            config["NUM_MINIBATCHES"], -1, *x.shape[1:]
-                        )  # num_mini_updates, batch_size/num_mini_updates, ...
+                            x.shape[0], config["NUM_MINIBATCHES"], -1, *x.shape[2:]
+                        )  # num_steps, minibatches, batch_size/num_minbatches,
+                        x = jnp.swapaxes(
+                            x, 0, 1
+                        )  # (minibatches, num_steps, batch_size/num_minbatches, ...)
                         return x
 
                     rng, _rng = jax.random.split(rng)
                     minibatches = jax.tree.map(
-                        lambda x: preprocess_transition(x, _rng), transitions
-                    )  # num_actors*num_envs (batch_size), ...
-                    targets = jax.tree.map(
-                        lambda x: preprocess_transition(x, _rng), lambda_targets
-                    )
+                        lambda x: preprocess_transition(x, _rng),
+                        memory_transitions,
+                    )  # num_minibatches, num_steps+memory_window, batch_size/num_minbatches, ...
 
                     rng, _rng = jax.random.split(rng)
                     (train_state, rng), (loss, qvals) = jax.lax.scan(
-                        _learn_phase, (train_state, rng), (minibatches, targets)
+                        _learn_phase, (train_state, rng), minibatches
                     )
 
                     return (train_state, rng), (loss, qvals)
+
+                # def _learn_epoch(carry, _):
+                #     train_state, rng = carry
+
+                #     def _learn_phase(carry, minibatch_and_target):
+                #         train_state, rng = carry
+                #         minibatch, target = minibatch_and_target
+
+                #         def _loss_fn(params):
+                #             hs = jax.tree.map(lambda x: x[0], minibatch.last_hs)
+                #             agent_in = (
+                #                 minibatch.obs,
+                #                 minibatch.last_done,
+                #                 minibatch.last_action,
+                #             )
+                #             (_, q_vals), updates = partial(
+                #                 network.apply, train=True, mutable=["batch_stats"]
+                #             )(
+                #                 {"params": params, "batch_stats": train_state.batch_stats},
+                #                 hs,
+                #                 *agent_in,
+                #             )
+
+                #             chosen_action_qvals = jnp.take_along_axis(
+                #                 q_vals,
+                #                 jnp.expand_dims(minibatch.action, axis=-1),
+                #                 axis=-1,
+                #             ).squeeze(axis=-1)
+
+                #             loss = 0.5 * jnp.square(chosen_action_qvals - target).mean()
+
+                #             return loss, (updates, chosen_action_qvals)
+
+                #         (loss, (updates, qvals)), grads = jax.value_and_grad(
+                #             _loss_fn, has_aux=True
+                #         )(train_state.params)
+                #         train_state = train_state.apply_gradients(grads=grads)
+                #         train_state = train_state.replace(
+                #             grad_steps=train_state.grad_steps + 1,
+                #             batch_stats=updates["batch_stats"],
+                #         )
+                #         return (train_state, rng), (loss, qvals)
+
+                #     def preprocess_transition(x, rng):
+                #         x = x.reshape(
+                #             -1, *x.shape[2:]
+                #         )
+                #         x = jax.random.permutation(rng, x)
+                #         x = x.reshape(
+                #             config["NUM_MINIBATCHES"], -1, *x.shape[1:]
+                #         )
+                #         return x
+
+                #     rng, _rng = jax.random.split(rng)
+                #     minibatches = jax.tree.map(
+                #         lambda x: preprocess_transition(x, _rng), transitions
+                #     )
+                #     targets = jax.tree.map(
+                #         lambda x: preprocess_transition(x, _rng), lambda_targets
+                #     )
+
+                #     rng, _rng = jax.random.split(rng)
+                #     (train_state, rng), (loss, qvals) = jax.lax.scan(
+                #         _learn_phase, (train_state, rng), (minibatches, targets)
+                #     )
+
+                #     return (train_state, rng), (loss, qvals)
 
                 rng, _rng = jax.random.split(rng)
                 (train_state, rng), (loss, qvals) = jax.lax.scan(
@@ -468,16 +623,14 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                 }
                 return metrics, train_state
 
-            # end of _update_agent
             rngs = jax.random.split(rng, num_agents)
             metrics, train_states = jax.vmap(_update_agent, in_axes=(0, 0, 0, None))(train_states, jnp.arange(num_agents), rngs, network)
-            # currently each key has a list of three values, make it s.t. we have key_0, key_1, key_2
             metrics = {f"{k}_{i}": v[i] for k, v in metrics.items() for i in range(v.shape[0])}
-            
+
             meta_policy_string = config.get("META_POLICY", "llm")
             meta_policy_can_learn = (meta_policy_string == "learned") or (meta_policy_string == "combined")
 
-            meta_reward_idx = -1 # see jaxtari version for explanation
+            meta_reward_idx = -1
             def do_update(_):
                 return _update_agent(meta_train_state, meta_reward_idx, rng, meta_network)
 
@@ -485,12 +638,9 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                 new_train_state = meta_train_state.replace(
                     timesteps=meta_train_state.timesteps + config["NUM_STEPS"] * config["NUM_ENVS"]
                 )
-                # run update step to get metrics, but don't change train_state
                 metrics_meta, _ = _update_agent(new_train_state, meta_reward_idx, rng, meta_network)
                 return metrics_meta, new_train_state
 
-            # Only update if the meta-policy is "learned" or "combined"
-            # and if we are not in pretraining or if we are done with pretraining
             is_done_pretraining = train_states.n_updates[0] > config["PRETRAIN_LEN"]
             is_not_pretraining = not (config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False))
             should_update = jnp.logical_or(is_done_pretraining, is_not_pretraining)
@@ -526,46 +676,45 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     )
                     metrics.update({f"test_modif/{k}": v for k, v in test_metrics_modif.items()})
 
-            # remove achievement metrics if not logging them
             if not config.get("LOG_ACHIEVEMENTS", False):
                 metrics = {
                     k: v for k, v in metrics.items() if "achievement" not in k.lower()
                 }
 
-            # report on wandb if required
             if config["WANDB_MODE"] != "disabled":
+
                 def callback(metrics, original_rng):
-                    # log at intervals
-                    if (
-                        metrics["update_steps_0"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
-                    ):
-                        if config.get("WANDB_LOG_ALL_SEEDS", False):
-                            metrics.update(
-                                {
-                                    f"rng{int(original_rng)}/{k}": v
-                                    for k, v in metrics.items()
-                                }
-                            )
-                        wandb.log(metrics, step=metrics["update_steps_0"])
+                    if config.get("WANDB_LOG_ALL_SEEDS", False):
+                        metrics.update(
+                            {
+                                f"rng{int(original_rng)}/{k}": v
+                                for k, v in metrics.items()
+                            }
+                        )
+                    wandb.log(metrics, step=metrics["update_steps_0"])
                 jax.debug.callback(callback, metrics, original_rng)
-            # update rtpt
             jax.debug.callback(rtpt_callback)
 
-            runner_state = (train_states, meta_train_state, tuple(expl_state), test_metrics, test_metrics_modif, rng)
+            runner_state = (
+                train_states,
+                memory_transitions,
+                meta_train_state,
+                tuple(expl_state),
+                test_metrics,
+                test_metrics_modif,
+                rng,
+            )
 
             return runner_state, metrics
-        
+
         def get_test_metrics(train_states, meta_train_state, modif, rng):
 
             if not config.get("TEST_DURING_TRAINING", False):
                 return None
 
-            def _env_step(carry, _):# -> tuple[tuple[Any, Any, Any, Any], tuple[Any, Any, Array, Any]]:
-                # this uses the meta-policy to step the environment
-                env_state, last_obs, prev_rewards, rng= carry
-                rng, rng_a, rng_s = jax.random.split(rng, 3) 
-                # 1. get actions of all networks
-                # 2. then select the correct ones according to the meta_policy
+            def _env_step(carry, _):
+                env_state, last_obs, prev_rewards, rng = carry
+                rng, rng_a, rng_s = jax.random.split(rng, 3)
 
                 def compute_actions(train_state):
                     q_vals = network.apply(
@@ -576,9 +725,8 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                         last_obs,
                         train=False,
                     )
-                    # different eps for each env
                     _rngs = jax.random.split(rng_a, config["TEST_NUM_ENVS"])
-                    eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"]) 
+                    eps = jnp.full(config["TEST_NUM_ENVS"], config["EPS_TEST"])
                     new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
                     return new_action, q_vals
 
@@ -588,16 +736,14 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                 llm_pretrain = config.get("LLM_PRETRAIN", False)
                 random_pretrain = config.get("RANDOM_PRETRAIN", False)
 
-                # Combine Q-values depending on mode
                 def handle_conditional():
                     active_agent_q_vals = meta_policy(meta_network, meta_train_state, last_obs, env_state)
-                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1)  # (128, 3)
-                    max_q_vals = jnp.transpose(jnp.max(all_q_vals, axis=-1))    # (128, 3)
-                    return agent_probs * max_q_vals                              # (128, 3)
+                    agent_probs = jax.nn.softmax(active_agent_q_vals, axis=-1)
+                    max_q_vals = jnp.transpose(jnp.max(all_q_vals, axis=-1))
+                    return agent_probs * max_q_vals
 
                 def handle_llm_pretrain():
-                    # llm pretrainining requires access to both, llm meta-policy and combined
-                    llm_q= meta_policy_llm(meta_network, meta_train_state, last_obs, env_state)
+                    llm_q = meta_policy_llm(meta_network, meta_train_state, last_obs, env_state)
                     both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state)
                     return jax.lax.cond(
                         train_states.n_updates[0] < config["PRETRAIN_LEN"],
@@ -607,7 +753,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     )
 
                 def handle_random_pretrain():
-                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state) 
+                    both_q = meta_policy(meta_network, meta_train_state, last_obs, env_state)
                     random_q = jax.random.randint(
                         rng_a, shape=both_q.shape, minval=0, maxval=both_q.shape[-1]
                     ).astype(jnp.float32)
@@ -619,24 +765,22 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     )
 
                 def handle_default():
-                    return meta_policy(meta_network, meta_train_state, last_obs, env_state) 
+                    return meta_policy(meta_network, meta_train_state, last_obs, env_state)
 
-                # Decide which Q-combination strategy to apply
                 combined_q = jax.lax.switch(
                     jnp.array([
                         llm_pretrain,
                         random_pretrain,
                         meta_policy_mode == "conditional",
-                        True # default if nothing else is true
-                    ], dtype=jnp.bool_).argmax(),  # priority order
+                        True
+                    ], dtype=jnp.bool_).argmax(),
                     [handle_llm_pretrain, handle_random_pretrain, handle_conditional, handle_default],
                 )
 
-                # Now select active agent — greedy vs exploratory
                 use_greedy = config.get("META_GREEDY", True)
 
                 def select_greedy(_):
-                    return jnp.argmax(combined_q, axis=-1)  # (128,)
+                    return jnp.argmax(combined_q, axis=-1)
 
                 def select_exploratory(_):
                     rng_split = jax.random.split(rng_s, config["TEST_NUM_ENVS"])
@@ -650,12 +794,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     operand=None
                 )
 
-                # active_agent shape: (num_envs)
-                combined_q_vid = combined_q[0]
-                active_agent_vid = active_agent[0]
-                # select the actions of the active agent 
                 new_action = all_actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
-                # use the selected actions to step the environment
 
                 new_obs, new_env_state, reward, new_done, info = jax.lax.cond(
                     modif,
@@ -663,38 +802,28 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     lambda _: test_env.step(rng_s, env_state, new_action, env_params),
                     operand=None
                 )
-                # only select the first value of all arrays of env_state for video generation
-                # (env==0)
-                # jax.debug.print("cows: {}", new_env_state.env_state.cows.mask.sum())
-                env_state_vid = jax.tree.map(lambda x: x[0], new_env_state)
-                # jax.debug.print("cows vid: {}", env_state_vid.env_state.cows.mask.sum())
-                # remove all_rewards from info (cannot be logged)
-                rewards = info.pop("all_rewards")[:, :num_agents] #removes shaped meta-reward
 
-                # select the rewards of the active agent
+                env_state_vid = jax.tree.map(lambda x: x[0], new_env_state)
+                rewards = info.pop("all_rewards")[:, :num_agents]
+
                 mask = jnp.arange(num_agents) == active_agent[:, None]
                 active_rewards = jnp.where(mask, rewards, 0)
 
-                # add all_rewards to prev_all_rewards, copy to all_returns
                 new_prev_rewards = prev_rewards + active_rewards
                 all_returns = new_prev_rewards
-                # extend new_done (128,) to match shape of all_returns (128,3)
-                # by copying the value n_agents times
-                all_done= jnp.repeat(new_done[:, None], num_agents, axis=1)
-                # set all_returns to nan where new_done is not True
+                all_done = jnp.repeat(new_done[:, None], num_agents, axis=1)
                 all_returns = jnp.where(
                     all_done, all_returns, jnp.nan * jnp.ones_like(all_returns)
                 )
-                info["active_returns"] = all_returns[jnp.arange(config["TEST_NUM_ENVS"]), active_agent] # (128,)
+                info["active_returns"] = all_returns[jnp.arange(config["TEST_NUM_ENVS"]), active_agent]
                 for agent_idx in range(num_agents):
                     info[f"active_returns_{agent_idx}"] = all_returns[:, agent_idx]
 
-                # reset prev_all_rewards to current reward where new_done is True
                 new_prev_rewards = jnp.where(
                     all_done, active_rewards, new_prev_rewards
                 )
 
-                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, new_done[0])
+                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent[0], combined_q[0], new_done[0])
 
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = jax.lax.cond(
@@ -718,7 +847,6 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     operand=None,
                 )
 
-            # return mean of done infos
             done_infos = jax.tree.map(
                 lambda x: jnp.nanmean(
                     jnp.where(
@@ -739,11 +867,91 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
         test_metrics_modif = get_test_metrics(train_states, meta_train_state, True, _rng)
 
         rng, _rng = jax.random.split(rng)
-        expl_state = env.reset(_rng, env_params)
+        obs, env_state = env.reset(_rng, env_params)
+        init_dones = jnp.zeros((config["NUM_ENVS"],), dtype=bool)
+        init_action = jnp.zeros((config["NUM_ENVS"],), dtype=int)
+        init_hs = network.initialize_carry(config["NUM_ENVS"])
+        expl_state = (init_hs, obs, init_dones, init_action, env_state)
+
+        # step randomly to have the initial memory window
+        def _random_step(carry, _):
+            hs, last_obs, last_done, last_action, env_state, rng = carry
+            rng, rng_a, rng_s = jax.random.split(rng, 3)
+            _obs = last_obs[np.newaxis]  # (1 (dummy time), num_envs, obs_size)
+            _done = last_done[np.newaxis]  # (1 (dummy time), num_envs)
+            _last_action = last_action[np.newaxis]  # (1 (dummy time), num_envs)
+
+            def compute_q_values(train_state, hs):
+                new_hs, q_vals = network.apply(
+                    {
+                        "params": train_state.params,
+                        "batch_stats": train_state.batch_stats,
+                    },
+                    hs,
+                    _obs,
+                    _done,
+                    _last_action,
+                    train=False,
+                )  # (num_envs, hidden_size), (1, num_envs, num_actions)
+                q_vals = q_vals.squeeze(axis=0)
+                return new_hs, q_vals
+
+            all_hs, all_q_vals = jax.vmap(compute_q_values)(train_states, hs)
+
+            def compute_actions(q_vals, train_state):
+                _rngs = jax.random.split(rng_a, config["NUM_ENVS"])
+                eps = jnp.full(config["NUM_ENVS"], 1.0)  # random actions
+                new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
+                return new_action
+
+            all_actions = jax.vmap(compute_actions)(all_q_vals, train_states)
+            active_agent = jax.random.randint(
+                rng_a, shape=(config["NUM_ENVS"],), minval=0, maxval=num_agents-1
+            )
+            new_action = all_actions[active_agent, jnp.arange(config["NUM_ENVS"])]
+            new_obs, new_env_state, reward, new_done, info = env.step(
+                rng_s, env_state, new_action, env_params
+            )
+            rewards = info.pop("all_rewards")
+            rewards = jnp.concatenate((rewards, reward[:, None]), axis=1)
+
+            #TODO: Could adapt this to the actual strategyy
+            meta_q_val = meta_policy(meta_network, meta_train_state, last_obs, env_state)
+
+            transition = Transition(
+                last_hs=hs,
+                obs=last_obs,
+                action=new_action,
+                agent=active_agent,
+                rewards=config.get("REW_SCALE", 1) * rewards,
+                done=new_done,
+                last_done=last_done,
+                last_action=last_action,
+                q_val=all_q_vals,
+                meta_q_val=meta_q_val
+            )
+            new_hs = all_hs[active_agent, jnp.arange(config["NUM_ENVS"])]
+            return (
+                new_hs,
+                new_obs,
+                new_done,
+                new_action,
+                new_env_state,
+                rng,
+            ), transition
+
+        rng, _rng = jax.random.split(rng)
+        (*expl_state, rng), memory_transitions = jax.lax.scan(
+            _random_step,
+            (*expl_state, _rng),
+            None,
+            config["MEMORY_WINDOW"] + config["NUM_STEPS"],
+        )
+        expl_state = tuple(expl_state)
 
         # train
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
+        runner_state = (train_states, memory_transitions, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
 
         runner_state, metrics = jax.lax.scan(
             _update_step, runner_state, None, config["NUM_UPDATES"]

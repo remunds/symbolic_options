@@ -20,6 +20,7 @@ META_EPS_FINISH: 0.005
 META_EPS_DECAY: 0.1 # ratio of total updates
 NUM_EPOCHS: 4 # minibatches per epoch
 NUM_MINIBATCHES: 128 # minibatches per epoch
+NORM_INPUT: True #!! This was deleted until Aug7
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 # HIDDEN_SIZE: 1024 #TODO: test if we can use smaller one
 # NUM_LAYERS: 4

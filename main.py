@@ -264,10 +264,18 @@ def outer_make_train(config):
     if "Craftax" in config.get("ENV_NAME", None):
         from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
         from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
+        from symbolic_options.pqn_rnn_craftax import make_train as make_train_pqn_rnn_craftax
+        from symbolic_options.hierarchical_pqn_rnn_craftax import make_train as make_train_hier_rnn_craftax
         if config.get("HIERARCHICAL", False):
-            return make_train_hier_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, llm_meta_policy, renderer)
+            if config.get("USE_RNN", False):
+                return make_train_hier_rnn_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, llm_meta_policy, renderer)
+            else:
+                return make_train_hier_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, llm_meta_policy, renderer)
         else:
-            return make_train_pqn_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, renderer)
+            if config.get("USE_RNN", False):
+                return make_train_pqn_rnn_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, renderer)
+            else:
+                return make_train_pqn_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
             return make_train_hier_jaxatari(config, env, test_env, test_env_modif, meta_policy, llm_meta_policy, renderer)

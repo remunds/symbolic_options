@@ -389,17 +389,17 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                 def callback(metrics, original_rng):
                     
                     # log at intervals 
-                    if (
-                        metrics["update_steps"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
-                    ):
-                        if config.get("WANDB_LOG_ALL_SEEDS", False):
-                            metrics.update(
-                                {
-                                    f"rng{int(original_rng)}/{k}": v
-                                    for k, v in metrics.items()
-                                }
-                            )
-                        wandb.log(metrics, step=metrics["update_steps"])
+                    # if (
+                    #     metrics["update_steps"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
+                    # ):
+                    if config.get("WANDB_LOG_ALL_SEEDS", False):
+                        metrics.update(
+                            {
+                                f"rng{int(original_rng)}/{k}": v
+                                for k, v in metrics.items()
+                            }
+                        )
+                    wandb.log(metrics, step=metrics["update_steps"])
 
                 jax.debug.callback(callback, metrics, original_rng)
             jax.debug.callback(rtpt_callback)
