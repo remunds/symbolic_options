@@ -209,11 +209,8 @@ class ExplorationMapWrapper(GymnaxWrapper):
         action: Union[int, float],
         params=None,
     ):
-        # replace state's necessities with the initial values 
-        _, reset_state = self.reset(key, params)
-
         obs, new_state, reward, done, info = self._env.step(
-            key, reset_state.env_state, action, params
+            key, state.env_state, action, params
         )
 
         exp_state = ExplorationState(

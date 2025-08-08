@@ -431,7 +431,12 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                 "td_loss": loss.mean(),
                 "qvals": qvals.mean(),
             }
-            metrics.update({k: v.mean() for k, v in infos.items()})
+            done_infos = jax.tree_util.tree_map(
+                lambda x: (x * infos["returned_episode"]).sum()
+                / infos["returned_episode"].sum(),
+                infos,
+            )
+            metrics.update(done_infos)
 
             if config.get("TEST_DURING_TRAINING", False):
                 rng, _rng = jax.random.split(rng)
@@ -470,17 +475,17 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                 def callback(metrics, original_rng):
                     
                     # log at intervals 
-                    # if (
-                    #     metrics["update_steps"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
-                    # ):
-                    if config.get("WANDB_LOG_ALL_SEEDS", False):
-                        metrics.update(
-                            {
-                                f"rng{int(original_rng)}/{k}": v
-                                for k, v in metrics.items()
-                            }
-                        )
-                    wandb.log(metrics, step=metrics["update_steps"])
+                    if (
+                        metrics["update_steps"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
+                    ):
+                        if config.get("WANDB_LOG_ALL_SEEDS", False):
+                            metrics.update(
+                                {
+                                    f"rng{int(original_rng)}/{k}": v
+                                    for k, v in metrics.items()
+                                }
+                            )
+                        wandb.log(metrics, step=metrics["update_steps"])
 
                 jax.debug.callback(callback, metrics, original_rng)
             jax.debug.callback(rtpt_callback)
@@ -536,7 +541,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                     operand=None,
                 )
                 env_state_vid = jax.tree.map(lambda x: x[0], new_env_state)
-                rewards = info.pop("all_rewards", 0)
+                rewards = info.pop("all_rewards")
                 return (new_hs, new_obs, new_done, new_action, new_env_state, rng), (info, env_state_vid, new_done[0])
 
             rng, _rng = jax.random.split(rng)
@@ -572,14 +577,9 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                     operand=None,
                 )
 
-            done_infos = jax.tree.map(
-                lambda x: jnp.nanmean(
-                    jnp.where(
-                        infos["returned_episode"],
-                        x,
-                        jnp.nan,
-                    )
-                ),
+            done_infos = jax.tree_util.tree_map(
+                lambda x: (x * infos["returned_episode"]).sum()
+                / infos["returned_episode"].sum(),
                 infos,
             )
             return done_infos

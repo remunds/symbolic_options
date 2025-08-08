@@ -662,7 +662,12 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
             )
             metrics.update({f"meta_{k}": v for k, v in meta_metrics.items()})
 
-            metrics.update({k: jnp.nanmean(v) for k, v in infos.items()}),
+            done_infos = jax.tree_util.tree_map(
+                lambda x: (x * infos["returned_episode"]).sum()
+                / infos["returned_episode"].sum(),
+                infos,
+            )
+            metrics.update(done_infos)
 
             if config.get("TEST_DURING_TRAINING", False):
                 rng, _rng = jax.random.split(rng)
@@ -692,14 +697,19 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
             if config["WANDB_MODE"] != "disabled":
 
                 def callback(metrics, original_rng):
-                    if config.get("WANDB_LOG_ALL_SEEDS", False):
-                        metrics.update(
-                            {
-                                f"rng{int(original_rng)}/{k}": v
-                                for k, v in metrics.items()
-                            }
-                        )
-                    wandb.log(metrics, step=metrics["update_steps_0"])
+
+                    # log at intervals
+                    if (
+                        metrics["update_steps_0"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
+                    ):
+                        if config.get("WANDB_LOG_ALL_SEEDS", False):
+                            metrics.update(
+                                {
+                                    f"rng{int(original_rng)}/{k}": v
+                                    for k, v in metrics.items()
+                                }
+                            )
+                        wandb.log(metrics, step=metrics["update_steps_0"])
                 jax.debug.callback(callback, metrics, original_rng)
             jax.debug.callback(rtpt_callback)
 
@@ -855,14 +865,9 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                     operand=None,
                 )
 
-            done_infos = jax.tree.map(
-                lambda x: jnp.nanmean(
-                    jnp.where(
-                        infos["returned_episode"],
-                        x,
-                        jnp.nan,
-                    )
-                ),
+            done_infos = jax.tree_util.tree_map(
+                lambda x: (x * infos["returned_episode"]).sum()
+                / infos["returned_episode"].sum(),
                 infos,
             )
 

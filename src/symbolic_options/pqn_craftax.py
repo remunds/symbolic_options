@@ -185,6 +185,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                 new_obs, new_env_state, reward, new_done, info = env.step(
                     rng_s, env_state, new_action, env_params
                 )
+                info.pop("all_rewards") #not required
 
                 transition = Transition(
                     obs=last_obs,
@@ -344,13 +345,12 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                 "td_loss": loss.mean(),
                 "qvals": qvals.mean(),
             }
-            # done_infos = jax.tree.map(
-            #     lambda x: (x * infos["returned_episode"]).sum()
-            #     / infos["returned_episode"].sum(),
-            #     infos,
-            # )
-            # metrics.update(done_infos)
-            metrics.update({k: v.mean() for k, v in infos.items()})
+            done_infos = jax.tree_util.tree_map(
+                lambda x: (x * infos["returned_episode"]).sum()
+                / infos["returned_episode"].sum(),
+                infos,
+            )
+            metrics.update(done_infos)
 
             if config.get("TEST_DURING_TRAINING", False):
                 rng, _rng = jax.random.split(rng)
@@ -387,20 +387,18 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
             if config["WANDB_MODE"] != "disabled":
 
                 def callback(metrics, original_rng):
-                    
                     # log at intervals 
-                    # if (
-                    #     metrics["update_steps"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
-                    # ):
-                    if config.get("WANDB_LOG_ALL_SEEDS", False):
-                        metrics.update(
-                            {
-                                f"rng{int(original_rng)}/{k}": v
-                                for k, v in metrics.items()
-                            }
-                        )
-                    wandb.log(metrics, step=metrics["update_steps"])
-
+                    if (
+                        metrics["update_steps"] % config.get("WANDB_LOG_INTERVAL", 128) == 0
+                    ):
+                        if config.get("WANDB_LOG_ALL_SEEDS", False):
+                            metrics.update(
+                                {
+                                    f"rng{int(original_rng)}/{k}": v
+                                    for k, v in metrics.items()
+                                }
+                            )
+                        wandb.log(metrics, step=metrics["update_steps"])
                 jax.debug.callback(callback, metrics, original_rng)
             jax.debug.callback(rtpt_callback)
 
@@ -465,18 +463,18 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
 
             # return mean of done infos
             # done_infos = jax.tree.map(
-            #     lambda x: (x * infos["returned_episode"]).sum()
-            #     / infos["returned_episode"].sum(),
+            #     lambda x: jnp.nanmean(
+            #         jnp.where(
+            #             infos["returned_episode"],
+            #             x,
+            #             jnp.nan,
+            #         )
+            #     ),
             #     infos,
             # )
-            done_infos = jax.tree.map(
-                lambda x: jnp.nanmean(
-                    jnp.where(
-                        infos["returned_episode"],
-                        x,
-                        jnp.nan,
-                    )
-                ),
+            done_infos = jax.tree_util.tree_map(
+                lambda x: (x * infos["returned_episode"]).sum()
+                / infos["returned_episode"].sum(),
                 infos,
             )
             return done_infos
