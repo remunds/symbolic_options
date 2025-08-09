@@ -52,10 +52,10 @@ LOG_ACHIEVEMENTS: False
 
 # evaluation
 WANDB_LOG_INTERVAL: 100
-TEST_DURING_TRAINING: False #Unfortunately leads to long compilation times (9min)
+TEST_DURING_TRAINING: True #Unfortunately leads to long compilation times (9min)
 TEST_INTERVAL: 0.1 # in terms of total updates
 TEST_NUM_ENVS: 1024
 TEST_NUM_STEPS: 10000
-TEST_MODIFS: False
+TEST_MODIFS: True
 EPS_TEST: 0.0 # 0 for greedy policy
-RECORD_VIDEO: False # in terms of total updates
+RECORD_VIDEO: True # in terms of total updates

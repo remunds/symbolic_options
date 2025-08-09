@@ -262,7 +262,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, r
                 new_obs, new_env_state, reward, new_done, info = env.step(
                     rng_s, env_state, new_action, env_params
                 )
-
+                info.pop("all_rewards")  # remove all_rewards from info
                 transition = Transition(
                     last_hs=hs,
                     obs=last_obs,

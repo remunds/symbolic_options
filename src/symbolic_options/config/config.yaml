@@ -10,7 +10,7 @@ HYP_TUNE: False
 WANDB_MODE: "online"  # set to online to activate wandb
 ENTITY: ""
 # PROJECT: ""
-PROJECT: ""
+PROJECT: "CRAFTER"
 alg:
   WANDB_LOG_ALL_SEEDS: True # will log all the vmapped seeds separetely
 

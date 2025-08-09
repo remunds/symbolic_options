@@ -179,7 +179,10 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
     else: # for craftax
         # shape currently is (N, H, W, 3)
         # but should be (N, 3, W, H) 
-        frames = np.transpose(frames, (0, 3, 2, 1))
+        # frames = np.transpose(frames, (0, 3, 2, 1))
+        print("frames before: ", frames.shape)
+        frames = np.transpose(frames, (0, 3, 1, 2))
+        print("frames after: ", frames.shape)
 
     if active_agents is not None:
         sidebar_renderer = SidebarRenderer(frames[0].shape)

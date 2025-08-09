@@ -128,6 +128,8 @@ def explore(prev_state: CraftaxState, state: CraftaxState):
     reward = jnp.sum(new_explored, axis=(-2, -1))  # Sum over the map dimensions
     return reward
 
+def llm_meta_policy_rnn(network, meta_train_state, _obs, _done, _last_action, hs, env_state: CraftaxState):
+    return None, llm_meta_policy(network, meta_train_state, _obs.squeeze(), env_state)
 
 @partial(jax.jit, static_argnums=(0))
 def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState):
@@ -217,14 +219,14 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState
         len(SKILLS)
     )
 
-# @jax.jit
+def conditional_meta_policy_rnn(network, meta_train_state, _obs, _done, _last_action, hs, env_state: CraftaxState):
+    return None, conditional_meta_policy(network, meta_train_state, _obs.squeeze(), env_state)
+
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState):
     """
     Same as llm_meta_policy but not mutually exclusive.
     """
-    state = env_state
-    if isinstance(env_state, MultiRewardLogEnvState): 
-        state = env_state.env_state
+    state = unpack(env_state)
 
     # Skill indices mapping
     SKILLS = {
@@ -322,6 +324,21 @@ def learned_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxS
     )
     return q_vals
 
+def learned_meta_policy_rnn(network, meta_train_state, _obs, _done, _last_action, hs, env_state: CraftaxState):#
+    new_hs, q_vals = network.apply(
+        {
+            "params": meta_train_state.params,
+            "batch_stats": meta_train_state.batch_stats,
+        },
+        hs,
+        _obs,
+        _done,
+        _last_action,
+        train=False,
+    )  # (num_envs, hidden_size), (1, num_envs, num_actions)
+    q_vals = q_vals.squeeze(axis=0)
+    return new_hs, q_vals 
+
 # @jax.jit
 def combined_meta_policy(network, meta_train_state, last_obs, env_state: CraftaxState):
     # combine learned and conditional meta policy
@@ -329,3 +346,10 @@ def combined_meta_policy(network, meta_train_state, last_obs, env_state: Craftax
     learned_q_vals = learned_meta_policy(network, meta_train_state, last_obs, env_state)
     combined_q_vals = conditional_q_vals * learned_q_vals
     return combined_q_vals
+
+def combined_meta_policy_rnn(network, meta_train_state, _obs, _done, _last_action, hs, env_state: CraftaxState):#
+    # combine learned and conditional meta policy
+    conditional_q_vals = conditional_meta_policy(network, meta_train_state, _obs.squeeze(), env_state)
+    hs, learned_q_vals = learned_meta_policy_rnn(network, meta_train_state, _obs, _done, _last_action, hs, env_state)
+    combined_q_vals = conditional_q_vals * learned_q_vals
+    return hs, combined_q_vals

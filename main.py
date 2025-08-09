@@ -189,7 +189,7 @@ def outer_make_train(config):
             MultiRewardWrapper
         )
         # from symbolic_options.reward_functions.craftax import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
-        from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy
+        from symbolic_options.reward_functions.craftax_classic import llm_meta_policy, learned_meta_policy, combined_meta_policy, conditional_meta_policy, llm_meta_policy_rnn, conditional_meta_policy_rnn, learned_meta_policy_rnn, combined_meta_policy_rnn
         from symbolic_options.purejaxql.craftax_wrappers import MultiRewardLogWrapper, LogWrapper, NoNecessitiesWrapper, ExplorationMapWrapper
         from symbolic_options.reward_functions.craftax_classic import survival_reward, combat_reward, resource_collection_reward, crafting_reward, explore, env_reward
         from symbolic_options.utils.video_recorder import CraftaxClassicRenderer
@@ -246,16 +246,25 @@ def outer_make_train(config):
     if config.get("HIERARCHICAL", False):
         meta_policy_string = config.get("META_POLICY", "llm")
         if meta_policy_string == "llm":
-            meta_policy = llm_meta_policy
+            if config.get("USE_RNN", False):
+                meta_policy = llm_meta_policy_rnn
+            else:
+                meta_policy = llm_meta_policy
         elif meta_policy_string == "learned":
-            meta_policy = learned_meta_policy
+            if config.get("USE_RNN", False):
+                meta_policy = learned_meta_policy_rnn
+            else:
+                meta_policy = learned_meta_policy
         elif meta_policy_string == "conditional":
-            meta_policy = conditional_meta_policy
+            if config.get("USE_RNN", False):
+                meta_policy = conditional_meta_policy_rnn
+            else:
+                meta_policy = conditional_meta_policy
         elif meta_policy_string == "combined":
-            # if config.get("LLM_PRETRAIN", False) or config.get("RANDOM_PRETRAIN", False): 
-            #     meta_policy = combined_meta_policy_explicit
-            # else:
-            meta_policy = combined_meta_policy
+            if config.get("USE_RNN", False):
+                meta_policy = combined_meta_policy_rnn
+            else:
+                meta_policy = combined_meta_policy
         else:
             raise ValueError("Invalid meta policy")
     else:
