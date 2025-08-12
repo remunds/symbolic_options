@@ -430,7 +430,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                                 # next_q = jnp.max(q, axis=-1) # this would be q of best action
                                 # instead, we use the q of the currently active option (or meta)
                                 next_q = jax.lax.cond(
-                                    state_idx == num_agents,
+                                    jnp.logical_or(state_idx == -1, state_idx == -2),
                                     lambda _: jnp.max(meta_q, axis=-1),
                                     lambda _: jnp.max(q, axis=-1),
                                     operand=None,
@@ -485,7 +485,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
                             # )  # (num_steps-1*batch_size,)
 
                             chosen_action_qvals = jax.lax.cond(
-                                state_idx == num_agents,
+                                jnp.logical_or(state_idx == -1, state_idx == -2),
                                 lambda _: jnp.take_along_axis(
                                     q_vals,
                                     jnp.expand_dims(minibatch.agent, axis=-1),
@@ -549,7 +549,7 @@ def make_train(config, env, test_env, test_env_modif, env_params, meta_policy, m
 
                 train_state = train_state.replace(n_updates=train_state.n_updates + 1)
                 eps = jax.lax.cond(
-                    state_idx == num_agents,
+                    jnp.logical_or(state_idx == -1, state_idx == -2),
                     lambda _: eps_meta_scheduler(train_state.n_updates),
                     lambda _: eps_scheduler(train_state.n_updates),
                     operand=None,

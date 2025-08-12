@@ -183,9 +183,18 @@ class NoNecessitiesWrapper(GymnaxWrapper):
         return obs, new_state, reward, done, info
 
 @struct.dataclass
+class CollectedItems:
+    wood: int = 0
+    stone: int = 0
+    coal: int = 0
+    iron: int = 0
+    diamond: int = 0
+
+@struct.dataclass
 class ExplorationState:
     env_state: Any
     exploration_map: chex.Array
+    collected_items: CollectedItems
 
 class ExplorationMapWrapper(GymnaxWrapper):
     """Wrapper that tracks the exploration map of the environment."""
@@ -197,9 +206,21 @@ class ExplorationMapWrapper(GymnaxWrapper):
         obs, state = self._env.reset(key, params)
         exp_state = ExplorationState(
             env_state=state,
-            exploration_map=jnp.zeros_like(state.map)
+            exploration_map=jnp.zeros_like(state.map),
+            collected_items=CollectedItems()
         )
         return obs, exp_state
+
+    @partial(jax.jit, static_argnums=(0))
+    def update_collected_items(self, old_inventory, new_inventory, collected_items):
+        # Update the collected items based on the inventory changes
+        return CollectedItems(
+            wood=collected_items.wood + jnp.maximum(0, new_inventory.wood - old_inventory.wood),
+            stone=collected_items.stone + jnp.maximum(0, new_inventory.stone - old_inventory.stone),
+            coal=collected_items.coal + jnp.maximum(0, new_inventory.coal - old_inventory.coal),
+            iron=collected_items.iron + jnp.maximum(0, new_inventory.iron - old_inventory.iron),
+            diamond=collected_items.diamond + jnp.maximum(0, new_inventory.diamond - old_inventory.diamond),
+        )
 
     @partial(jax.jit, static_argnums=(0, 4))
     def step(
@@ -209,13 +230,16 @@ class ExplorationMapWrapper(GymnaxWrapper):
         action: Union[int, float],
         params=None,
     ):
-        obs, new_state, reward, done, info = self._env.step(
+        obs, new_env_state, reward, done, info = self._env.step(
             key, state.env_state, action, params
         )
 
         exp_state = ExplorationState(
-            env_state=new_state,
-            exploration_map=state.exploration_map.at[new_state.player_position].set(1)
+            env_state=new_env_state,
+            exploration_map=state.exploration_map.at[new_env_state.player_position].set(1),
+            collected_items=self.update_collected_items(
+                state.env_state.inventory, new_env_state.inventory, state.collected_items
+            )
         )
         
         return obs, exp_state, reward, done, info

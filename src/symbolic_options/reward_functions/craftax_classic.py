@@ -53,20 +53,20 @@ def combat_reward(prev_state: CraftaxState, state: CraftaxState):
     return reduced_zombie_health + reduced_skeleton_health + reduced_cow_health + 0.5*player_health_reward 
 
 @jax.jit
-def resource_collection_reward(prev_state: CraftaxState, state: CraftaxState):
-    prev_state = unpack(prev_state)
-    state = unpack(state)
+def resource_collection_reward(prev_state, state):
+    # prev_state = unpack(prev_state)
+    # state = unpack(state)
     # Reward for resource collection (wood, stone, coal, iron, diamond)
     # Limit the rewards based on the already collected resources 
-    wood_reward = state.inventory.wood - prev_state.inventory.wood
-    wood_reward = jnp.where(prev_state.inventory.wood < 5, wood_reward, 0)
-    stone_reward = state.inventory.stone - prev_state.inventory.stone
-    stone_reward = jnp.where(prev_state.inventory.stone < 5, stone_reward, 0)
-    coal_reward = state.inventory.coal - prev_state.inventory.coal
-    coal_reward = jnp.where(prev_state.inventory.coal < 5, coal_reward, 0)
-    iron_reward = state.inventory.iron - prev_state.inventory.iron
-    iron_reward = jnp.where(prev_state.inventory.iron < 5, iron_reward, 0)
-    diamond_reward = state.inventory.diamond - prev_state.inventory.diamond
+    wood_reward = state.collected_items.wood - prev_state.collected_items.wood
+    wood_reward = jnp.where(prev_state.collected_items.wood < 5, wood_reward, 0)
+    stone_reward = state.collected_items.stone - prev_state.collected_items.stone
+    stone_reward = jnp.where(prev_state.collected_items.stone < 5, stone_reward, 0)
+    coal_reward = state.collected_items.coal - prev_state.collected_items.coal
+    coal_reward = jnp.where(prev_state.collected_items.coal < 5, coal_reward, 0)
+    iron_reward = state.collected_items.iron - prev_state.collected_items.iron
+    iron_reward = jnp.where(prev_state.collected_items.iron < 5, iron_reward, 0)
+    diamond_reward = state.collected_items.diamond - prev_state.collected_items.diamond
     resource_reward = wood_reward + 5 * stone_reward + 3 * coal_reward + 10 * iron_reward + 20 * diamond_reward
     return resource_reward
 
@@ -98,6 +98,7 @@ def should_craft_sword(inv: Inventory):
 def crafting_reward(prev_state: CraftaxState, state: CraftaxState):
     prev_state = unpack(prev_state)
     state = unpack(state)
+
     # Reward for crafting items (pickaxe1 wood, pickaxe2 stone, ...)
     wood_pick_rew = jnp.where(prev_state.inventory.wood_pickaxe < state.inventory.wood_pickaxe, 1, 0)
     wood_pick_rew = jnp.where(should_craft_pickaxe(prev_state.inventory)[0], wood_pick_rew, 0)

@@ -357,18 +357,25 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
                 def _get_target(lambda_returns_and_next_q, transition):
                     lambda_returns, next_q = lambda_returns_and_next_q
+                    lambda_mul = jax.lax.cond(
+                        jnp.logical_or(state_idx == -1, state_idx == -2),
+                        lambda _: config["META_LAMBDA"],
+                        lambda _: config["LAMBDA"],
+                        operand=None,
+                    )
                     target_bootstrap = (
                         transition.rewards[... , state_idx] + config["GAMMA"] * (1 - transition.done) * next_q
                     )
                     delta = lambda_returns - next_q
                     lambda_returns = (
-                        target_bootstrap + config["GAMMA"] * config["LAMBDA"] * delta
+                        target_bootstrap + config["GAMMA"] * lambda_mul * delta
                     )
                     lambda_returns = (
                         1 - transition.done
                     ) * lambda_returns + transition.done * transition.rewards[... , state_idx]
                     next_q = jax.lax.cond(
-                        state_idx == num_agents,
+                        # state_idx == num_agents,
+                        jnp.logical_or(state_idx == -1, state_idx == -2),
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
                         lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
                         operand=None,
@@ -403,7 +410,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                             )  # (batch_size*2, num_actions)
 
                             chosen_action_qvals = jax.lax.cond(
-                                state_idx == num_agents,
+                                # state_idx == num_agents,
+                                jnp.logical_or(state_idx == -1, state_idx == -2),
                                 lambda _: jnp.take_along_axis(
                                     q_vals,
                                     jnp.expand_dims(minibatch.agent, axis=-1),
@@ -462,7 +470,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
                 train_state = train_state.replace(n_updates=train_state.n_updates + 1)
                 eps = jax.lax.cond(
-                    state_idx == num_agents,
+                    # state_idx == num_agents,
+                    jnp.logical_or(state_idx == -1, state_idx == -2),
                     lambda _: eps_meta_scheduler(train_state.n_updates),
                     lambda _: eps_scheduler(train_state.n_updates),
                     operand=None,
