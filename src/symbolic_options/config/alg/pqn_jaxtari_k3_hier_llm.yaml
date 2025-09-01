@@ -15,7 +15,7 @@ EPS_DECAY: 0.3 #Best for Kang
 # META_EPS_START: 0.1 # this will be the value until training is started
 META_EPS_START: 1.0 # this will be the value until training is started
 META_EPS_FINISH: 0.001
-META_EPS_DECAY: 0.1 # ratio of total updates
+META_EPS_DECAY: 0.3 # ratio of total updates
 NUM_EPOCHS: 5
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
