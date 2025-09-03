@@ -2,9 +2,10 @@
 # NOTE: model is still defaul PQN, not RNN
 NUM_SEEDS: 1 
 NAME_INITIALS: "RE"
-ALG_NAME: "pqn_rnn"
+ALG_NAME: "pqn_rnn_hier_baseline"
 TOTAL_TIMESTEPS: 1e9
 TOTAL_TIMESTEPS_DECAY: 1e9 # will be used for decay functions, in case you want to test for less timesteps and keep decays same
+# NUM_ENVS: 1024 #parallel environments
 NUM_ENVS: 512 #parallel environments
 MEMORY_WINDOW: 0
 NUM_STEPS: 128 # steps per environment in each update
@@ -34,13 +35,17 @@ GAMMA: 0.99
 Q_LAMBDA: False
 LAMBDA: 0.5 
 
-HIERARCHICAL: False # False: use PQN rather than hierarchical PQN
-META_POLICY: "llm" # llm, learned, conditional, combined
+HIERARCHICAL: True # False: use PQN rather than hierarchical PQN
+META_POLICY: "learned" # llm, learned, conditional, combined
 META_GREEDY: False
 META_SHAPED_REWARD: False # only makes sense for combined (meta-Q)
 LLM_PRETRAIN: False #pretrain options with llm meta policy
 RANDOM_PRETRAIN: False #pretrian options with random meta policy
 PRETRAIN_LEN: 7000 # length of pretraining
+
+
+# IMPORTANT LINE:
+NO_REWARDS: True #Only use env-reward for all options
 
 # env specific
 # ENV_NAME: "Craftax-Symbolic-v1"
@@ -54,7 +59,7 @@ LOG_ACHIEVEMENTS: False
 WANDB_LOG_INTERVAL: 100
 TEST_DURING_TRAINING: True #Unfortunately leads to long compilation times (9min)
 TEST_INTERVAL: 0.1 # in terms of total updates
-TEST_NUM_ENVS: 1024
+TEST_NUM_ENVS: 512
 TEST_NUM_STEPS: 10000
 TEST_MODIFS: True
 EPS_TEST: 0.0 # 0 for greedy policy

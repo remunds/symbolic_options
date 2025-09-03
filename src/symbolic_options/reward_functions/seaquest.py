@@ -208,9 +208,9 @@ def shoot_default_policy(network, meta_train_state, last_obs, env_state: Seaques
 
 # @jax.jit
 def conditional_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):
-   # choose either divser_default or enemy_default
-   return divers_default_policy(network, meta_train_state, last_obs, env_state) 
-#    return shoot_default_policy(network, meta_train_state, last_obs, env_state)
+   # choose either divser_default or shoot_default
+#    return divers_default_policy(network, meta_train_state, last_obs, env_state) 
+   return shoot_default_policy(network, meta_train_state, last_obs, env_state)
 
 # @jax.jit
 def learned_meta_policy(network, meta_train_state, last_obs, env_state: SeaquestState):#
