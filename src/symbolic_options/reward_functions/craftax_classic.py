@@ -305,10 +305,13 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Craf
         jnp.where(resource_mask.astype(int), SKILLS['RESOURCE'], SKILLS['EXPLORE']),
         len(SKILLS)
     )
-    # Combine all masks
-    combined_mask = (
-        combat_mask + survival_mask + craft_mask + resource_mask + explore_mask
-    ) # [N, 5]
+    # Combine all one-hot vecs into a single one-hot vec
+    # max returns 1 where any of the masks is 1 
+    # (like a logical OR operation across the one-hot vectors)
+    combined_mask = jnp.max(
+        jnp.stack([combat_mask, survival_mask, craft_mask, resource_mask, explore_mask]),
+        axis=0
+    )
 
     return combined_mask
 

@@ -53,7 +53,7 @@ LOG_ACHIEVEMENTS: False
 
 # evaluation
 WANDB_LOG_INTERVAL: 100
-TEST_DURING_TRAINING: True #Unfortunately leads to long compilation times (9min)
+TEST_DURING_TRAINING: True
 TEST_INTERVAL: 0.1 # in terms of total updates
 TEST_NUM_ENVS: 512
 TEST_NUM_STEPS: 10000
