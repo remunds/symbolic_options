@@ -594,6 +594,8 @@ def main(config):
 
     config = {**config, **config["alg"]}
     # config = {
+    #     "SEED": 0,
+    #     "NUM_SEEDS": 1,
     #     "LR": 2.5e-4,
     #     "NUM_ENVS": 128,
     #     "NUM_STEPS": 128,
