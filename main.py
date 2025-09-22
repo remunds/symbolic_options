@@ -9,7 +9,8 @@ import hydra
 from omegaconf import OmegaConf
 from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestRenderer 
 from jaxatari.games.jax_kangaroo import JaxKangaroo, KangarooRenderer
-from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
+# from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
+from symbolic_options.hierarchical_pqn_jaxtari_few_shot import make_train as make_train_hier_jaxatari
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
 
