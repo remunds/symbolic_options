@@ -9,6 +9,8 @@ import optax
 import flax.linen as nn
 from flax.training.train_state import TrainState
 import wandb
+import functools
+import time
 
 
 from symbolic_options.utils.video_recorder import video_callback
@@ -488,7 +490,16 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
             def fake_update_agent(train_state, state_idx, rng, network): 
                 #TODO: this is obv. slow since it actually computes updates, but it works for now
-                metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
+                # metrics_meta, _ = _update_agent(train_state, state_idx, rng, network)
+                metrics_meta = {
+                    "env_step": train_state.timesteps,
+                    "update_steps": train_state.n_updates,
+                    "env_frame": train_state.timesteps * 4, #skipped 4 frames
+                    "grad_steps": train_state.grad_steps,
+                    "td_loss": jnp.array(jnp.nan),
+                    "qvals": jnp.array(jnp.nan),
+                    "eps": jnp.array(jnp.nan),
+                }
                 train_state = train_state.replace(
                     timesteps=train_state.timesteps
                     + config["NUM_STEPS"] * config["NUM_ENVS"]
@@ -514,7 +525,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
             
             meta_policy_string = config.get("META_POLICY", "llm")
             if meta_policy_string == "learned" or meta_policy_string == "combined":
-
                 meta_reward_idx = -1
                 if config.get("SHAPED_REWARD", False):
                     meta_reward_idx = -2  # if shaped reward is used, the last idx is the env reward, the second last is the shaped reward
@@ -525,7 +535,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     metrics.update({f"meta_{k}": v for k, v in metrics_meta.items()})
                 else:
                     # if n_updates > config["LLM_PRETRAIN"], we want to use the learned meta-policy
-
                     metrics_meta, meta_train_state = jax.lax.cond(
                         train_states.n_updates[0] > config["PRETRAIN_LEN"],
                         lambda _: _update_agent(meta_train_state, meta_reward_idx, rng, meta_network),
@@ -539,7 +548,10 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
             return runner_state, metrics
 
-        def test_and_log(rng, metrics, test_metrics, test_metrics_modif):
+        # def test_and_log(rng, metrics, test_metrics, test_metrics_modif):
+        def test_and_log(metrics, runner_state):
+            #runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
+            train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, rng = runner_state
             inner_metrics = metrics.copy()
             if config.get("TEST_DURING_TRAINING", False):
                 rng, _rng = jax.random.split(rng)
@@ -576,7 +588,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 jax.debug.callback(callback, inner_metrics, original_rng)
             # update rtpt
             jax.debug.callback(rtpt_callback)
-            return rng, test_metrics, test_metrics_modif
+            return rng, inner_metrics, test_metrics, test_metrics_modif
 
             # rng, test_metrics, test_metrics_modif = jax.lax.cond(
             #     only_meta_update,
@@ -595,7 +607,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
             def _env_step(carry, _):
                 # this uses the meta-policy to step the environment
-                env_state, last_obs, prev_rewards, rng= carry
+                # env_state, last_obs, prev_rewards, rng= carry
+                env_state, train_states, meta_train_state, last_obs, prev_rewards, rng = carry
                 rng, rng_a, rng_s = jax.random.split(rng, 3) 
                 # 1. get actions of all networks
                 # 2. then select the correct ones according to the meta_policy
@@ -726,7 +739,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     all_done, active_rewards, new_prev_rewards
                 )
 
-                return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0])
+                # return (new_env_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0])
+                return (new_env_state, train_states, meta_train_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0]) 
 
             rng, _rng = jax.random.split(rng)
             init_obs, env_state = jax.lax.cond(
@@ -738,27 +752,35 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
             init_rewards = jnp.zeros((config["TEST_NUM_ENVS"], num_agents))
 
+            # run update steps on modified env to adapt the agent 
             if config.get("TRAIN_ON_MODIF", False) and modif and train_on_test:
                 assert config["TEST_NUM_UPDATES"] is not None and config["TEST_NUM_UPDATES"] > 0, "If TRAIN_ON_MODIF is set to True, TEST_NUM_UPDATES must be a positive integer" 
-                # run update steps on modified env to adapt the agent
                 expl_state = (init_obs, env_state)
                 test_metrics, test_metrics_modif = {}, {}
+                if config.get("RESET_META", False):
+                    # reset the meta-policy to avoid local optima of non-modif env 
+                    rng, _rng = jax.random.split(rng)
+                    jax.debug.print("resetting meta for modif training")
+                    meta_train_state = create_agent(rng, None, None, meta_network, lr_meta)
                 runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
-                only_meta_update = jnp.array([True for _ in range(config["TEST_NUM_UPDATES"])])
-                jax.debug.print("Updating only meta-policy")
+                jax.debug.print("updating meta on modif") 
+                start_time = time.time()
+                only_meta_update = jnp.ones((int(config["TEST_NUM_UPDATES"]),), dtype=bool)
                 runner_state, _ = jax.lax.scan(
                     _update_step, runner_state, only_meta_update
                 )
+                jax.debug.print("done: {}", time.time() - start_time)
                 # only need updated meta_train_state (others aren't learned anyway)
                 _, meta_train_state, _, _, _, _ = runner_state
 
-
+            carry_state = (env_state, train_states, meta_train_state, init_obs, init_rewards, _rng)
             _, output = jax.lax.scan(
-                _env_step, (env_state, init_obs, init_rewards, _rng), None, config["TEST_NUM_STEPS"]
+                _env_step, carry_state, None, config["TEST_NUM_STEPS"]
             )
             infos, states, active_agents, combined_qs, dones = output
 
             if config.get("RECORD_VIDEO", False):
+                jax.debug.print("n_updates: {}", train_states.n_updates[0])
                 jax.lax.cond(
                     train_states.n_updates[0] > 0,
                     lambda _: jax.debug.callback(video_callback, states, active_agents, combined_qs, dones, train_states.n_updates[0], renderer, modif=modif),
@@ -778,15 +800,15 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 infos,
             )
             return done_infos
-        
-        def _update_and_metrics(runner_state, not_used):
-            only_meta_update = False #jnp.array(False)  # never only meta update here
+
+        @jax.jit 
+        def _update_and_metrics(runner_state, only_meta_update):
+            #runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
             runner_state, step_metrics = _update_step(runner_state, only_meta_update)
 
-            #runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
-            test_metrics, test_metrics_modif = runner_state[3], runner_state[4]
-            rng = runner_state[-1]
-            rng, test_metrics, test_metrics_modif = test_and_log(rng, step_metrics, test_metrics, test_metrics_modif)
+            # test_metrics, test_metrics_modif = runner_state[3], runner_state[4]
+            # rng = runner_state[-1]
+            rng, step_metrics, test_metrics, test_metrics_modif = test_and_log(step_metrics, runner_state)
             runner_state = (runner_state[0], runner_state[1], runner_state[2], test_metrics, test_metrics_modif, rng)
             return runner_state, step_metrics
 
@@ -802,9 +824,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         # train
         rng, _rng = jax.random.split(rng)
         runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
+        only_meta_update = jnp.zeros((int(config["NUM_UPDATES"]),), dtype=bool)
         runner_state, metrics = jax.lax.scan(
-            # _update_step, runner_state, only_meta_update
-            _update_and_metrics, runner_state, None, config["NUM_UPDATES"]
+            _update_and_metrics, runner_state, only_meta_update
         )
 
         return {"runner_state": runner_state, "metrics": metrics}

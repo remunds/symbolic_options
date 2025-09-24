@@ -52,4 +52,10 @@ TEST_NUM_ENVS: 1024 #512
 TEST_NUM_STEPS: 10000
 TEST_MODIFS: True # whether to use modifications on test-env (no-enemies)
 EPS_TEST: 0.0 # 0 for greedy policy
+# EPS_TEST: 0.001 # 0 for greedy policy
 RECORD_VIDEO: True # in terms of total updates
+
+# Few-shot training
+TRAIN_ON_MODIF: True
+RESET_META: True
+TEST_UPDATE_TIMESTEPS: 10e6
