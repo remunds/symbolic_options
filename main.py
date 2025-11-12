@@ -9,8 +9,8 @@ import hydra
 from omegaconf import OmegaConf
 from jaxatari.games.jax_seaquest import JaxSeaquest, SeaquestRenderer 
 from jaxatari.games.jax_kangaroo import JaxKangaroo, KangarooRenderer
-# from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
-from symbolic_options.hierarchical_pqn_jaxtari_few_shot import make_train as make_train_hier_jaxatari
+from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
+# from symbolic_options.hierarchical_pqn_jaxtari_few_shot import make_train as make_train_hier_jaxatari
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
 
 
@@ -18,6 +18,11 @@ from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, A
 
 
 def outer_make_train(config):
+    noisy_training = config.get("NOISY_TRAINING", False)
+    noisy_evaluation = config.get("NOISY_EVAL", False)
+    detection_probability = config.get("DETECT_PROB", 1.0)
+    noise_std_dev = config.get("NOISE_STD_DEV", 0.0)
+
     if config.get("ENV_NAME", None) == "Pong":
         from jaxatari.games.jax_pong import JaxPong, PongRenderer
         from jaxatari.wrappers import MultiRewardLogWrapper
@@ -138,9 +143,16 @@ def outer_make_train(config):
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+                if noisy_training:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=detection_probability, std_dev=noise_std_dev)
+                else:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=1.0, std_dev=0.0)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                if noisy_evaluation:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev)
+                else:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0)
+                # env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
@@ -169,9 +181,15 @@ def outer_make_train(config):
             if no_enemies:
                 env = DisableThreadsWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, first_fire=False)
+                if noisy_training:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=detection_probability, std_dev=noise_std_dev, first_fire=False)
+                else:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=1.0, std_dev=0.0, first_fire=False)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, first_fire=False)
+                if noisy_evaluation:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev, first_fire=False)
+                else:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0, first_fire=False)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)

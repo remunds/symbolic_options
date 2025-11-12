@@ -24,4 +24,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv.sources]
-jaxatari = { git = "https://github.com/k4ntz/JAXAtari", rev = "62cd59ba60abb2b9bcd0cc6852a7aa16d3a87378" }
+jaxatari = { path = "JAXAtari", editable = true }

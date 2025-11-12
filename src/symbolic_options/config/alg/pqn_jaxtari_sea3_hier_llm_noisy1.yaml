@@ -45,6 +45,12 @@ PRETRAIN_LEN: 3700 #100000 #25000 # length of pretraining (128 envs)
 ENV_NAME: "Seaquest"
 ENV_KWARGS: {}
 
+# noise
+NOISY_TRAINING: False
+NOISY_EVAL: True
+DETECT_PROB: 0.9
+NOISE_STD_DEV: 3.0
+
 # evaluation
 TEST_DURING_TRAINING: True 
 TEST_INTERVAL: 0.1 # in terms of total updates
