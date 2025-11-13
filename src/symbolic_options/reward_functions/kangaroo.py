@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jaxatari.wrappers import MultiRewardLogState, AtariState
-from jaxatari.games.jax_kangaroo import KangarooState, JaxKangaroo
+from jaxatari.games.jax_kangaroo import KangarooState, JaxKangaroo, get_level_constants
 
 def unpack(state):
     while not isinstance(state, KangarooState):
@@ -231,8 +231,8 @@ def reached_platform_level(prev_state, state) -> jnp.ndarray:
     # return +1 for each new platform height reached
     player_bottom_y = state.player.y + state.player.height
     prev_player_bottom_y = prev_state.player.y + prev_state.player.height
-    level_constants = JaxKangaroo()._get_level_constants(state.current_level)
-    # level_constants = get_level_constants(state.current_level)
+    # level_constants = JaxKangaroo()._get_level_constants(state.current_level)
+    level_constants = get_level_constants(state.current_level)
     platform_positions_y = level_constants.platform_positions[..., 1]
     filter_first = jnp.where(platform_positions_y >= 172, 0, 1) # bottom platform is at 172
     player_over_platform = player_bottom_y <= platform_positions_y
