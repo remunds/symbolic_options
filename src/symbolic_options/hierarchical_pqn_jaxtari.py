@@ -10,6 +10,8 @@ import flax.linen as nn
 from flax.training.train_state import TrainState
 import wandb
 
+from jaxatari.environment import JAXAtariAction as Action
+
 
 from symbolic_options.utils.video_recorder import video_callback
 
@@ -133,6 +135,29 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         )
         return chosen_actions
 
+    def filter_actions(actions):
+        print(actions.shape)
+        #(N_agents, n_envs)
+        # TODO: adapt ability to do this for all methods.
+        # For now: Hardcoded in case of seaquest
+        agent_idx = 1 #0: shoot enemies, 1: collect divers, 2:surface
+        agent_actions = actions[agent_idx]
+        fire_mask = jnp.isin(agent_actions, jnp.array([
+                    Action.FIRE,
+                    Action.UPRIGHTFIRE,
+                    Action.UPLEFTFIRE,
+                    Action.DOWNFIRE,
+                    Action.DOWNRIGHTFIRE,
+                    Action.DOWNLEFTFIRE,
+                    Action.RIGHTFIRE,
+                    Action.LEFTFIRE,
+                    Action.UPFIRE,
+        ]))
+        # set fire actions to NOOP
+        filtered_actions = jnp.where(fire_mask, Action.NOOP, agent_actions)
+        actions = actions.at[agent_idx].set(filtered_actions)
+        return actions
+
 
 
     def train(rng, params, batch_stats):
@@ -232,6 +257,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                         last_obs,
                         train=False,
                     )
+                    #NOTE: added by me to filter q-vals for shooting in seaquest diver option
                     # different eps for each env
                     _rngs = jax.random.split(rng_a, config["NUM_ENVS"])
                     eps = jnp.full(config["NUM_ENVS"], eps_scheduler(train_state.n_updates))
@@ -239,6 +265,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     return new_action, q_vals
 
                 all_actions, all_q_vals = jax.vmap(compute_actions)(train_states)
+
+                #(n_agents, n_envs, n_actions)
+                all_actions = filter_actions(all_actions)
 
                 meta_policy_mode = config.get("META_POLICY", "llm")
                 llm_pretrain = config.get("LLM_PRETRAIN", False)
@@ -600,6 +629,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                     return new_action, q_vals
 
                 all_actions, all_q_vals = jax.vmap(compute_actions)(train_states)
+                all_actions = filter_actions(all_actions)
 
                 meta_policy_mode = config.get("META_POLICY", "llm")
                 llm_pretrain = config.get("LLM_PRETRAIN", False)
