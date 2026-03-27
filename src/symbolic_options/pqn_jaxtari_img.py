@@ -13,38 +13,72 @@ import wandb
 
 from symbolic_options.utils.video_recorder import video_callback
 
-class QNetwork(nn.Module):
-    action_dim: int
-    hidden_size: int = 64
-    num_layers: int = 3
+class CNN(nn.Module):
+
     norm_type: str = "layer_norm"
-    norm_input: bool = False
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool):
-        if self.norm_input:
-            x = nn.BatchNorm(use_running_average=not train)(x)
-        else:
-            # dummy normalize input for global compatibility
-            x_dummy = nn.BatchNorm(use_running_average=not train)(x)
-
         if self.norm_type == "layer_norm":
             normalize = lambda x: nn.LayerNorm()(x)
         elif self.norm_type == "batch_norm":
             normalize = lambda x: nn.BatchNorm(use_running_average=not train)(x)
         else:
             normalize = lambda x: x
-
-        for l in range(self.num_layers):
-            x = nn.Dense(self.hidden_size)(x)
-            # x = nn.Dense(self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
-            x = normalize(x)
-            x = nn.relu(x)
-
-        x = nn.Dense(self.action_dim)(x)
-        # x = nn.Dense(self.action_dim, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
-
+        x = nn.Conv(
+            32,
+            kernel_size=(8, 8),
+            strides=(4, 4),
+            padding="VALID",
+            kernel_init=nn.initializers.he_normal(),
+        )(x)
+        x = normalize(x)
+        x = nn.relu(x)
+        x = nn.Conv(
+            64,
+            kernel_size=(4, 4),
+            strides=(2, 2),
+            padding="VALID",
+            kernel_init=nn.initializers.he_normal(),
+        )(x)
+        x = normalize(x)
+        x = nn.relu(x)
+        x = nn.Conv(
+            64,
+            kernel_size=(3, 3),
+            strides=(1, 1),
+            padding="VALID",
+            kernel_init=nn.initializers.he_normal(),
+        )(x)
+        x = normalize(x)
+        x = nn.relu(x)
+        x = x.reshape((x.shape[0], -1))
+        x = nn.Dense(512, kernel_init=nn.initializers.he_normal())(x)
+        x = normalize(x)
+        x = nn.relu(x)
         return x
+
+
+class QNetwork(nn.Module):
+    action_dim: int
+    norm_type: str = "layer_norm"
+    norm_input: bool = False
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, train: bool):
+        # Accept both NCHW and NHWC image batches.
+        if x.ndim == 4 and x.shape[-1] not in (1, 3, 4) and x.shape[1] in (1, 3, 4):
+            x = jnp.transpose(x, (0, 2, 3, 1))
+        if self.norm_input:
+            x = nn.BatchNorm(use_running_average=not train)(x)
+        else:
+            # dummy normalize input for global compatibility
+            x_dummy = nn.BatchNorm(use_running_average=not train)(x)
+            x = x / 255.0
+        x = CNN(norm_type=self.norm_type)(x, train)
+        x = nn.Dense(self.action_dim)(x)
+        return x
+
 
 @chex.dataclass(frozen=True)
 class Transition:
@@ -81,10 +115,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
     assert (config["NUM_STEPS"] * config["NUM_ENVS"]) % config[
         "NUM_MINIBATCHES"
     ] == 0, "NUM_MINIBATCHES must divide NUM_STEPS*NUM_ENVS"
-
-    use_shaped_reward = config.get("SHAPED_REWARD", False)
-    if use_shaped_reward:
-        print("Using shaped reward")
 
     # env = JaxSeaquest()
     # env = FlattenObservationWrapper(env)
@@ -161,8 +191,9 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
         )
 
         def create_agent(rng, params, batch_stats):
-            obs_len = np.prod(config["OBS_SHAPE"])
-            init_x = jnp.zeros(obs_len)
+            # obs_len = np.prod(config["OBS_SHAPE"])
+            # init_x = jnp.zeros(obs_len)
+            init_x = jnp.zeros((1, *config["OBS_SHAPE"]))
             network_variables = network.init(rng, init_x, train=False)
             tx = optax.chain(
                 optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
@@ -204,10 +235,6 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, renderer):
                 new_action = jax.vmap(eps_greedy_exploration)(_rngs, q_vals, eps)
 
                 new_obs, new_env_state, reward, new_done, info = vmap_step(env_state, new_action)
-
-                if use_shaped_reward:
-                    shaped_rewards = info["all_rewards"][:, 0] 
-                    reward = shaped_rewards 
 
                 transition = Transition(
                     obs=last_obs,

@@ -1,3 +1,5 @@
+from etils.exm.dummy import curr_job_name
+from flax.linen import meta
 import jax
 import jax.numpy as jnp
 from jaxatari.wrappers import AtariState, MultiRewardLogState
@@ -14,7 +16,7 @@ def unpack(state):
 
 @jax.jit
 def env_reward(prev_state: SeaquestState, state: SeaquestState):
-    reward = JaxSeaquest()._get_env_reward(prev_state, state)
+    reward = JaxSeaquest()._get_reward(prev_state, state)
     return reward
 
 @jax.jit
@@ -41,11 +43,56 @@ def upward_reward(prev_state: SeaquestState, state: SeaquestState):
 
 @jax.jit
 def shaped_reward(prev_state: SeaquestState, state: SeaquestState):
-    #NOTE: Not in use in final runs
-    # combine all rewards (+surface with 6 divers reward)
-    #TODO: this is a try of balancing the rewards (make collecting divers more valuable than fighting enemies, and encouraging moving up)
-    reward = 5 * collect_divers_reward(prev_state, state) + fight_enemies_reward(prev_state, state)# + upward_reward(prev_state, state)
-    reward = jnp.where(state.successful_rescues > prev_state.successful_rescues, 100, reward)
+    # For ablations of PQN with rewardshaping
+    meta_pol_state = jax.tree.map(lambda x: x[None], state)
+    choice_qvals = llm_meta_policy_shoot_default(None, None, None, meta_pol_state)
+    reward = choice_qvals[:, 0] * fight_enemies_reward(prev_state, state) + choice_qvals[:, 1] * collect_divers_reward(prev_state, state) + choice_qvals[:, 2] * upward_reward(prev_state, state)
+    return reward.squeeze()
+
+@jax.jit
+def shaped_reward_simple(prev_state: SeaquestState, state: SeaquestState):
+    # For ablations of PQN with rewardshaping
+    reward = fight_enemies_reward(prev_state, state) + collect_divers_reward(prev_state, state) + upward_reward(prev_state, state) 
+    return reward.squeeze()
+
+@jax.jit
+def shaped_reward_llm(prev_state: SeaquestState, state: SeaquestState):
+    prev_obs = JaxSeaquest()._get_observation(prev_state)
+    curr_obs = JaxSeaquest()._get_observation(state)
+
+    reward = 0.0
+
+    # 1. Base Score Reward (Captures enemies destroyed and surfacing bonuses)
+    # Scaled down to prevent it from overwhelming the shaping terms
+    score_gain = curr_obs.player_score - prev_obs.player_score
+    reward += score_gain * 0.1
+
+    # 2. Diver Collection Reward
+    # Reward the agent immediately for picking up a diver
+    num_divers_gained = curr_obs.collected_divers - prev_obs.collected_divers
+    reward += jnp.where(num_divers_gained > 0, num_divers_gained * 10.0, 0.0)
+
+    # 3. Surfacing Reward (The "Big Payoff")
+    # If divers count goes from 6 to 0 and player is at surface (low Y), they banked them
+    is_at_surface = curr_obs.player.y < 47  # Approximate surface Y-coordinate
+    banked_divers = (prev_obs.collected_divers == 6) & (curr_obs.collected_divers == 0) & is_at_surface
+    reward += jnp.where(banked_divers, 50.0, 0.0)
+
+    # 4. Oxygen Shaping (Urgency)
+    # Apply a penalty that grows exponentially as oxygen drops below 20%
+    oxygen_threshold = 16  # Assuming oxygen_level is 0-64 or 0-255; adjust based on scale
+    low_oxygen_penalty = jnp.where(curr_obs.oxygen_level < oxygen_threshold, -0.5, 0.0)
+    reward += low_oxygen_penalty
+
+    # 5. Death Penalty
+    # Losing a life should be a massive negative signal
+    lost_life = curr_obs.lives < prev_obs.lives
+    reward -= jnp.where(lost_life, 100.0, 0.0)
+
+    # 6. Proximity Penalty (Optional/Soft)
+    # Small penalty for being too close to enemies to encourage dodging
+    # This can be added if the agent is too "suicidal"
+    
     return reward
 
 # @jax.jit

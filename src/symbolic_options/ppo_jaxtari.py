@@ -98,6 +98,11 @@ def make_train(config):
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
+        noisy_training = config.get("NOISY_TRAINING", False)
+        noisy_evaluation = config.get("NOISY_EVAL", False)
+        detection_probability = config.get("DETECT_PROB", 1.0)
+        noise_std_dev = config.get("NOISE_STD_DEV", 0.0)
+
         def create_env(train: bool = False, randomized_enemy: bool = False, lazy_enemy: bool = False):
             env = JaxPong(reward_funcs=reward_funcs)
             if randomized_enemy:
@@ -105,9 +110,15 @@ def make_train(config):
             if lazy_enemy:
                 env = LazyEnemyWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+                if noisy_training:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=detection_probability, std_dev=noise_std_dev)
+                else:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                if noisy_evaluation:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev)
+                else:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
@@ -622,8 +633,6 @@ def main(config):
     #     "RECORD_VIDEO": True, 
     # }
     alg_name = config.get("ALG_NAME", "ppo")
-    if alg_name != "PPO" and alg_name != "ppo":
-        raise ValueError(f"Algorithm name must be 'PPO' or 'ppo', got {alg_name}")
 
     env_name = config["ENV_NAME"]
     wandb.init(

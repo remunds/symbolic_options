@@ -225,7 +225,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
         num_agents = config.get("NUM_AGENTS", len(env.reward_funcs))
         if num_agents == 0:
             num_agents = 1
-
+        print("Number of agents: ", num_agents)
         # create multiple agents
         rng_keys = jax.random.split(rng, num_agents)
         train_states: CustomTrainState = jax.vmap(create_agent, in_axes=(0, 0, 0, None, None))(rng_keys, params, batch_stats, network, lr)

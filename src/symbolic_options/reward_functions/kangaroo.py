@@ -23,6 +23,85 @@ def env_reward(prev_state: KangarooState, state: KangarooState) -> float:
     return JaxKangaroo()._get_env_reward(prev_state, state)
 
 @jax.jit
+def shaped_reward(prev_state: KangarooState, state: KangarooState):
+    # For ablations of PQN with rewardshaping
+    # for each leaf in state, add batch_dim 1
+    meta_pol_state = jax.tree.map(lambda x: x[None], state)
+    choice_qvals = llm_meta_policy(None, None, None, meta_pol_state)
+    reward = choice_qvals[:, 0] * navigate_reward(prev_state, state) + choice_qvals[:, 1] * handle_enemies_reward(prev_state, state) + choice_qvals[:, 2] * collect_fruits_reward(prev_state, state)
+    return reward.squeeze()
+
+@jax.jit
+def shaped_reward_simple(prev_state: KangarooState, state: KangarooState):
+    # For ablations of PQN with rewardshaping
+    # for each leaf in state, add batch_dim 1
+    reward = navigate_reward(prev_state, state) + handle_enemies_reward(prev_state, state) + collect_fruits_reward(prev_state, state)
+    return reward.squeeze()
+
+def shaped_reward_llm(prev_state: KangarooState, state: KangarooState):
+    prev_obs = JaxKangaroo()._get_observation(prev_state)
+    curr_obs = JaxKangaroo()._get_observation(state)
+    reward = 0.0
+
+    # 1. Distance-to-Goal Shaping (Potential-based)
+    # Calculate Euclidean distance to the baby
+    prev_dist = jnp.linalg.norm(prev_obs.player_x - prev_obs.child_position[0]) + \
+                jnp.linalg.norm(prev_obs.player_y - prev_obs.child_position[1])
+    curr_dist = jnp.linalg.norm(curr_obs.player_x - curr_obs.child_position[0]) + \
+                jnp.linalg.norm(curr_obs.player_y - curr_obs.child_position[1])
+    
+    # Positive reward for getting closer, negative for moving away
+    reward += (prev_dist - curr_dist) * 0.1
+
+    # 2. Altitude Reward (Climbing ladders/branches)
+    # In Kangaroo, the baby is usually at the top (low Y value in many screen coordinates)
+    # We reward decreasing the Y coordinate (moving up)
+    # if curr_obs.player_y < prev_obs.player_y:
+    #     reward += 0.5
+    # elif curr_obs.player_y > prev_obs.player_y:
+    #     reward -= 0.2  # Slight penalty for falling/backtracking
+    reward = jax.lax.cond(
+        curr_obs.player_y < prev_obs.player_y,
+        lambda: reward + 0.5,  # if player moved up, add reward
+        lambda: jax.lax.cond(
+            curr_obs.player_y > prev_obs.player_y,
+            lambda: reward - 0.2,  # if player moved down, subtract reward
+            lambda: reward  # if no vertical movement, keep reward the same
+        )
+    )
+
+    # 3. Combat & Threat Neutralization
+    # Reward the agent for reducing the number of active monkeys or projectiles in its vicinity
+    # (Assuming these disappear from the array when punched)
+    prev_monkeys = jnp.count_nonzero(prev_state.level.monkey_states, axis=-1)
+    curr_monkeys = jnp.count_nonzero(state.level.monkey_states, axis=-1)
+    # if curr_monkeys < prev_monkeys:
+    #     reward += 2.0  # Significant reward for punching a monkey
+    reward = jax.lax.cond(
+        curr_monkeys < prev_monkeys,
+        lambda: reward + 2.0,  # if fewer monkeys remain, add reward
+        lambda: reward  # otherwise, keep reward the same
+    )
+
+    # 4. Collection Logic (Fruit)
+    # Small bonus for picking fruit to encourage high-score behavior without distracting from the rescue
+    prev_fruits = jnp.count_nonzero(prev_state.level.fruit_actives, axis=-1)
+    curr_fruits = jnp.count_nonzero(state.level.fruit_actives, axis=-1)
+    # if curr_fruits < prev_fruits:
+    #     reward += 1.0
+    reward = jax.lax.cond(
+        curr_fruits < prev_fruits,
+        lambda: reward + 1.0,  # if fewer fruits remain, add reward
+        lambda: reward  # otherwise, keep reward the same
+    )
+
+    # 5. Living Penalty / Time Pressure
+    # Encourages the agent to solve the screen before the Bonus Timer hits zero
+    reward -= 0.01
+
+    return reward
+
+@jax.jit
 def navigate_reward(prev_state: KangarooState, state: KangarooState):
     # reward for navigating towards the child (upwards)
     reward = jax.lax.cond(
@@ -71,6 +150,7 @@ def llm_meta_policy(network, meta_train_state, last_obs, env_state: KangarooStat
     # if fruit or bell is close, collect fruit/activate bell
     max_fruit_dist_sq = 35 ** 2
     fruit_mask = jnp.where(state.level.fruit_actives != 0, 1, 0) #(128, 3)
+    print(state.level.fruit_positions.shape, state.player.x.shape)
     dx = state.level.fruit_positions[..., 0] - state.player.x[:, None] #(128, 3)
     dy = state.level.fruit_positions[..., 1] - state.player.y[:, None] #(128, 3)
     fruit_dist_sq = dx ** 2 + dy ** 2

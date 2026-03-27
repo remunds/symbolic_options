@@ -12,9 +12,10 @@ from jaxatari.games.jax_kangaroo import JaxKangaroo, KangarooRenderer
 from symbolic_options.hierarchical_pqn_jaxtari import make_train as make_train_hier_jaxatari
 # from symbolic_options.hierarchical_pqn_jaxtari_few_shot import make_train as make_train_hier_jaxatari
 from symbolic_options.pqn_jaxtari import make_train as make_train_pqn_jaxatari
+from symbolic_options.pqn_jaxtari_img import make_train as make_train_pqn_jaxatari_img
 
 
-from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, AtariWrapper
+from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, AtariWrapper, PixelObsWrapper
 
 
 def outer_make_train(config):
@@ -119,6 +120,7 @@ def outer_make_train(config):
         test_env_modif = create_env(False, False, True, False) # evaluate on mod
         renderer = FreewayRenderer()
 
+
     elif config.get("ENV_NAME", None) == "Seaquest":
         from symbolic_options.reward_functions.seaquest import collect_divers_reward, fight_enemies_reward, upward_reward, shaped_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying 
         from symbolic_options.reward_functions.seaquest import learned_meta_policy, llm_meta_policy, combined_meta_policy 
@@ -129,12 +131,44 @@ def outer_make_train(config):
         # NOTE: if conditional or combined provide idle_reward (not necessary for llm and learned)
         # this makes sure that there is always a fallback if no rule evaluates to true
         reward_funcs = [fight_enemies_reward, collect_divers_reward, upward_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
+
+        # This tests generated rewards
+        if config.get("MODEL", None) == "gemini_pro":
+            print("Using Gemini Pro reward functions")
+            from symbolic_options.reward_functions.seaquest_gemini_pro import reward_rescue_state, reward_combat_survival_state, reward_surface_state
+            #TODO:
+            from symbolic_options.reward_functions.seaquest_gemini_pro import llm_meta_policy 
+            from jaxatari.wrappers import MultiRewardLogWrapper
+            from jaxatari.games.mods.seaquest_mods import DisableEnemiesWrapper
+            reward_funcs = [reward_combat_survival_state, reward_rescue_state, reward_surface_state, total_rescued, total_collected, total_shot, total_surface_without_dying]
+
+        if config.get("MODEL", None) == "codex":
+            print("Using codex reward functions")
+            #TODO:
+            from symbolic_options.reward_functions.seaquest_codex import reward_safe_navigation_state, reward_collect_divers_state, reward_surface_state, reward_oxygen_state, reward_opportunistic_combat_state 
+            from symbolic_options.reward_functions.seaquest_codex import llm_meta_policy 
+            from jaxatari.wrappers import MultiRewardLogWrapper
+            from jaxatari.games.mods.seaquest_mods import DisableEnemiesWrapper
+            reward_funcs = [reward_opportunistic_combat_state, reward_collect_divers_state, reward_safe_navigation_state, reward_surface_state, reward_oxygen_state, total_rescued, total_collected, total_shot, total_surface_without_dying]
+
         if config.get("NO_REWARDS", False):
             # reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
             reward_funcs = [env_reward, env_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
+
+        if config.get("SHAPED_REWARD", False):
+            from symbolic_options.reward_functions.seaquest import shaped_reward
+            if config.get("SHAPED_REWARD_SIMPLE", False):
+                from symbolic_options.reward_functions.seaquest import shaped_reward_simple
+                shaped_reward = shaped_reward_simple
+            if config.get("SHAPED_REWARD_LLM", False):
+                from symbolic_options.reward_functions.seaquest import shaped_reward_llm
+                shaped_reward = shaped_reward_llm
+            reward_funcs = [shaped_reward, env_reward, env_reward, total_rescued, total_collected, total_shot, total_surface_without_dying]
+
         # Shaped reward is reward function for meta-policy (not necessary, if meta-policy does not learn) 
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
+
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
@@ -153,8 +187,11 @@ def outer_make_train(config):
                 else:
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0)
                 # env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
-            env = ObjectCentricWrapper(env)
-            env = FlattenObservationWrapper(env)
+            if config.get("OBJECT_CENTRIC", True):
+                env = ObjectCentricWrapper(env)
+                env = FlattenObservationWrapper(env)
+            else:
+                env = PixelObsWrapper(env, do_pixel_resize=True, pixel_resize_shape=(84, 84), grayscale=True)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
@@ -174,6 +211,16 @@ def outer_make_train(config):
             # reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
             reward_funcs = [env_reward, env_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected] 
 
+        if config.get("SHAPED_REWARD", False):
+            from symbolic_options.reward_functions.kangaroo import shaped_reward
+            if config.get("SHAPED_REWARD_SIMPLE", False):
+                from symbolic_options.reward_functions.kangaroo import shaped_reward_simple
+                shaped_reward = shaped_reward_simple
+            if config.get("SHAPED_REWARD_LLM", False):
+                from symbolic_options.reward_functions.kangaroo import shaped_reward_llm
+                shaped_reward = shaped_reward_llm
+            reward_funcs = [shaped_reward, env_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected]
+
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
         def create_env(train=False, no_enemies: bool = False):
@@ -190,8 +237,11 @@ def outer_make_train(config):
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev, first_fire=False)
                 else:
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0, first_fire=False)
-            env = ObjectCentricWrapper(env)
-            env = FlattenObservationWrapper(env)
+            if config.get("OBJECT_CENTRIC", True):
+                env = ObjectCentricWrapper(env)
+                env = FlattenObservationWrapper(env)
+            else:
+                env = PixelObsWrapper(env, do_pixel_resize=True, pixel_resize_shape=(84, 84), grayscale=True)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
@@ -308,6 +358,9 @@ def outer_make_train(config):
         if config.get("HIERARCHICAL", False):
             return make_train_hier_jaxatari(config, env, test_env, test_env_modif, meta_policy, llm_meta_policy, renderer)
         else:
+            if not config.get("OBJECT_CENTRIC", True):
+                print("Using pixel-based observations and convolutional networks.")
+                return make_train_pqn_jaxatari_img(config, env, test_env, test_env_modif, meta_policy, renderer)
             return make_train_pqn_jaxatari(config, env, test_env, test_env_modif, meta_policy, renderer)
         
 def load_network_params(config):
