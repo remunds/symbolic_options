@@ -36,13 +36,13 @@ class QNetwork(nn.Module):
             normalize = lambda x: x
 
         for l in range(self.num_layers):
-            x = nn.Dense(self.hidden_size)(x)
-            # x = nn.Dense(self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
+            # x = nn.Dense(self.hidden_size)(x)
+            x = nn.Dense(self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0))(x)
             x = normalize(x)
             x = nn.relu(x)
 
-        x = nn.Dense(self.action_dim)(x)
-        # x = nn.Dense(self.action_dim, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
+        # x = nn.Dense(self.action_dim)(x)
+        x = nn.Dense(self.action_dim, kernel_init=orthogonal(1), bias_init=constant(0.0))(x)
 
         return x
 
