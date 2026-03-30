@@ -1,0 +1,29 @@
+[project]
+name = "reward-machines"
+version = "0.1.0"
+description = "Reward Machines for reinforcement learning"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "gym==0.15.7",
+    "flax>=0.10.7",
+    "optax>=0.2.8",
+    "rtpt>=0.0.4",
+    "wandb[media]>=0.25.1",
+]
+
+[project.optional-dependencies]
+jaxatari = [
+    "jax>=0.4.28",
+    "jaxatari",
+]
+legacy = [
+    "baselines @ git+https://github.com/openai/baselines.git@ea25b9e8b234e6ee1bca43083f8f3cf974143998",
+]
+
+[tool.uv]
+default-groups = []
+
+[tool.uv.sources]
+jaxatari = { git = "https://github.com/k4ntz/JAXAtari.git" }

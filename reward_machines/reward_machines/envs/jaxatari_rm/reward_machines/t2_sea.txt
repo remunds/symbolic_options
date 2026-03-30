@@ -1,0 +1,8 @@
+0   # initial state
+[2] # terminal state
+(0,0,'!f',RewardCollectDivers())
+(0,1,'f',RewardCollectDivers())
+(0,2,'d',RewardTerminal())
+(1,1,'!s',RewardSurfacing())
+(1,0,'s',RewardSurfacing())
+(1,2,'d',RewardTerminal())
