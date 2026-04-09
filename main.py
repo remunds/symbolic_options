@@ -1,5 +1,5 @@
-
 import os
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95" # limit GPU memory usage to 95%
 import time
 import copy
 import jax
@@ -16,6 +16,7 @@ from symbolic_options.pqn_jaxtari_img import make_train as make_train_pqn_jaxata
 
 
 from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, AtariWrapper, PixelObsWrapper
+
 
 
 def outer_make_train(config):

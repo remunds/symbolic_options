@@ -53,9 +53,9 @@ class CNN(nn.Module):
         x = normalize(x)
         x = nn.relu(x)
         x = x.reshape((x.shape[0], -1))
-        x = nn.Dense(512, kernel_init=nn.initializers.he_normal())(x)
-        x = normalize(x)
-        x = nn.relu(x)
+        # x = nn.Dense(512, kernel_init=nn.initializers.he_normal())(x)
+        # x = normalize(x)
+        # x = nn.relu(x)
         return x
 
 

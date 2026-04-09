@@ -6,7 +6,8 @@ TOTAL_TIMESTEPS_DECAY: 5e7 # will be used for decay functions, in case you want 
 NUM_ENVS: 512 #512 # parallel environments
 # NUM_ENVS: 128 #512 # parallel environments
 # NUM_STEPS: 32 # steps per environment in each update
-NUM_STEPS: 64 # steps per environment in each update
+# NUM_STEPS: 64 # steps per environment in each update
+NUM_STEPS: 128 # steps per environment in each update
 # NUM_STEPS: 32 # steps per environment in each update
 # NUM_ENVS / NUM_STEPS should be 8 for original PQN (they did 128/32)
 EPS_START: 1.0
