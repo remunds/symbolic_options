@@ -48,6 +48,13 @@ TEST_DURING_TRAINING: True
 TEST_INTERVAL: 0.1 # in terms of total updates
 TEST_NUM_ENVS: 1024 #512
 TEST_NUM_STEPS: 10000
-TEST_MODIFS: True # whether to use modifications on test-env (no-enemies)
 EPS_TEST: 0.0 # 0 for greedy policy
 RECORD_VIDEO: True # in terms of total updates
+eval_envs:
+  - label: "clean"
+    noisy_eval: false
+    stop_random_cars: True
+  - label: "mod"
+    stop_random_cars: True
+    noisy_eval: false
+

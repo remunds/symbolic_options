@@ -19,3 +19,10 @@ ENV_NAME: "Pong"
 ENV_KWARGS: {}
 
 LOAD_PATH: "/home/remunds/projects/symbolic_options/models/"
+eval_envs:
+  - label: "clean"
+    noisy_eval: false
+    lazy_enemy: True
+  - label: "mod"
+    lazy_enemy: True
+    noisy_eval: false

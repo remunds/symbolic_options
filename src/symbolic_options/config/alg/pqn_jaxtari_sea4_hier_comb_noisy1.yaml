@@ -46,20 +46,28 @@ ENV_NAME: "Seaquest"
 ENV_KWARGS: {}
 
 # noise
-NOISY_TRAINING: False
-NOISY_EVAL: True
 DETECT_PROB: 0.9
 NOISE_STD_DEV: 3.0
+NOISY_TRAINING: False
 
 # evaluation
 TEST_DURING_TRAINING: True 
 TEST_INTERVAL: 0.1 # in terms of total updates
 TEST_NUM_ENVS: 1024 #512
 TEST_NUM_STEPS: 10000
-TEST_MODIFS: True # whether to use modifications on test-env (no-enemies)
 EPS_TEST: 0.0 # 0 for greedy policy
 # EPS_TEST: 0.001 # 0 for greedy policy
 RECORD_VIDEO: True # in terms of total updates
+eval_envs:
+  - label: "clean"
+    noisy_eval: false
+    no_enemies: false
+  - label: "noisy"
+    noisy_eval: true
+    no_enemies: false
+  - label: "mod"
+    no_enemies: True
+    noisy_eval: false
 
 # Few-shot training
 TRAIN_ON_MODIF: True

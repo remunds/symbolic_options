@@ -600,7 +600,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
             # return runner_state, metrics
 
-        def get_test_metrics(train_states, meta_train_state, modif, train_on_test, rng):
+        def get_test_metrics(train_states, meta_train_state, vmap_reset_fn, vmap_step_fn, label, train_on_test, rng):
 
             if not config.get("TEST_DURING_TRAINING", False):
                 return None
@@ -703,12 +703,8 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 action = all_actions[active_agent, jnp.arange(config["TEST_NUM_ENVS"])]
 
                 # use the selected actions to step the environment
-                # new_obs, new_env_state, reward, done, info = test_vmap_step(
-                new_obs, new_env_state, reward, done, info = jax.lax.cond(
-                    modif,
-                    lambda _: modif_test_vmap_step(env_state, action),
-                    lambda _: test_vmap_step(env_state, action),
-                    operand=None
+                new_obs, new_env_state, reward, done, info = vmap_step_fn(
+                    env_state, action
                 )
                 # only select the first value of all arrays of env_state for video generation
                 # (env==0)
@@ -743,26 +739,21 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 return (new_env_state, train_states, meta_train_state, new_obs, new_prev_rewards, rng), (info, env_state_vid, active_agent_vid, combined_q_vid, done[0]) 
 
             rng, _rng = jax.random.split(rng)
-            init_obs, env_state = jax.lax.cond(
-                modif,
-                lambda _: modif_test_vmap_reset(config["TEST_NUM_ENVS"])(_rng),
-                lambda _: test_vmap_reset(config["TEST_NUM_ENVS"])(_rng),
-                operand=None
-            )
+            init_obs, env_state = vmap_reset_fn(config["TEST_NUM_ENVS"])(_rng)
 
             init_rewards = jnp.zeros((config["TEST_NUM_ENVS"], num_agents))
 
             # run update steps on modified env to adapt the agent 
-            if config.get("TRAIN_ON_MODIF", False) and modif and train_on_test:
+            if config.get("TRAIN_ON_MODIF", False) and train_on_test:
                 assert config["TEST_NUM_UPDATES"] is not None and config["TEST_NUM_UPDATES"] > 0, "If TRAIN_ON_MODIF is set to True, TEST_NUM_UPDATES must be a positive integer" 
                 expl_state = (init_obs, env_state)
-                test_metrics, test_metrics_modif = {}, {}
+                test_metrics = {}
                 if config.get("RESET_META", False):
                     # reset the meta-policy to avoid local optima of non-modif env 
                     rng, _rng = jax.random.split(rng)
                     jax.debug.print("resetting meta for modif training")
                     meta_train_state = create_agent(rng, None, None, meta_network, lr_meta)
-                runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
+                runner_state = (train_states, meta_train_state, expl_state, test_metrics, _rng)
                 jax.debug.print("updating meta on modif") 
                 start_time = time.time()
                 only_meta_update = jnp.ones((int(config["TEST_NUM_UPDATES"]),), dtype=bool)
@@ -771,7 +762,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 )
                 jax.debug.print("done: {}", time.time() - start_time)
                 # only need updated meta_train_state (others aren't learned anyway)
-                _, meta_train_state, _, _, _, _ = runner_state
+                _, meta_train_state, _, _, _ = runner_state
 
             carry_state = (env_state, train_states, meta_train_state, init_obs, init_rewards, _rng)
             _, output = jax.lax.scan(
@@ -783,7 +774,7 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
                 jax.debug.print("n_updates: {}", train_states.n_updates[0])
                 jax.lax.cond(
                     train_states.n_updates[0] > 0,
-                    lambda _: jax.debug.callback(video_callback, states, active_agents, combined_qs, dones, train_states.n_updates[0], renderer, modif=modif),
+                    lambda _: jax.debug.callback(video_callback, states, active_agents, combined_qs, dones, train_states.n_updates[0], renderer, label=label),
                     lambda _: None,
                     operand=None,
                 )
@@ -803,27 +794,28 @@ def make_train(config, env, test_env, test_env_modif, meta_policy, meta_policy_l
 
         @jax.jit 
         def _update_and_metrics(runner_state, only_meta_update):
-            #runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
             runner_state, step_metrics = _update_step(runner_state, only_meta_update)
 
-            # test_metrics, test_metrics_modif = runner_state[3], runner_state[4]
-            # rng = runner_state[-1]
-            rng, step_metrics, test_metrics, test_metrics_modif = test_and_log(step_metrics, runner_state)
-            runner_state = (runner_state[0], runner_state[1], runner_state[2], test_metrics, test_metrics_modif, rng)
+            rng, step_metrics, test_metrics = test_and_log(step_metrics, runner_state)
+            runner_state = (runner_state[0], runner_state[1], runner_state[2], test_metrics, rng)
             return runner_state, step_metrics
 
         rng, _rng = jax.random.split(rng)
-        test_metrics = get_test_metrics(train_states, meta_train_state, False, False, _rng)
-
-        rng, _rng = jax.random.split(rng)
-        test_metrics_modif = get_test_metrics(train_states, meta_train_state, True, False, _rng)
+        eval_init_results = []
+        for vmap_reset_fn, vmap_step_fn, label in eval_closures:
+            rng, __rng = jax.random.split(rng)
+            env_metrics = get_test_metrics(
+                train_states, meta_train_state, vmap_reset_fn, vmap_step_fn, label, False, __rng
+            )
+            eval_init_results.append(env_metrics)
+        test_metrics = tuple(eval_init_results)
 
         rng, _rng = jax.random.split(rng)
         expl_state = vmap_reset(config["NUM_ENVS"])(_rng)
 
         # train
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_states, meta_train_state, expl_state, test_metrics, test_metrics_modif, _rng)
+        runner_state = (train_states, meta_train_state, expl_state, test_metrics, _rng)
         only_meta_update = jnp.zeros((int(config["NUM_UPDATES"]),), dtype=bool)
         runner_state, metrics = jax.lax.scan(
             _update_and_metrics, runner_state, only_meta_update

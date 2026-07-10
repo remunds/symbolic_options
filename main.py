@@ -19,9 +19,19 @@ from jaxatari.wrappers import ObjectCentricWrapper, FlattenObservationWrapper, A
 
 
 
+def _build_eval_envs(create_env_fn, config):
+    """Build a tuple of (env_obj, label) pairs from the eval_envs config list."""
+    eval_envs_list = []
+    for entry in config.get("eval_envs", []):
+        label = entry.get("label", "default")
+        kwargs = {k: v for k, v in entry.items() if k != "label"}
+        env_obj = create_env_fn(train=False, **kwargs)
+        eval_envs_list.append((env_obj, label))
+    return tuple(eval_envs_list)
+
+
 def outer_make_train(config):
     noisy_training = config.get("NOISY_TRAINING", False)
-    noisy_evaluation = config.get("NOISY_EVAL", False)
     detection_probability = config.get("DETECT_PROB", 1.0)
     noise_std_dev = config.get("NOISE_STD_DEV", 0.0)
 
@@ -37,7 +47,7 @@ def outer_make_train(config):
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train: bool = False, randomized_enemy: bool = False, lazy_enemy: bool = False):
+        def create_env(train: bool = False, randomized_enemy: bool = False, lazy_enemy: bool = False, noisy_eval: bool = False):
             env = JaxPong(reward_funcs=reward_funcs)
             if randomized_enemy:
                 env = RandomizedEnemyWrapper(env)
@@ -46,14 +56,13 @@ def outer_make_train(config):
             if train:
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability if noisy_eval else 1.0, std_dev=noise_std_dev if noisy_eval else 0.0)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False, False) 
-        test_env = create_env(False, False, False) 
-        test_env_modif = create_env(False, False, True) # evaluate on lazy enemy 
+        eval_envs = _build_eval_envs(create_env, config) 
         renderer = PongRenderer()
 
     elif config.get("ENV_NAME", None) == "Breakout":
@@ -68,7 +77,7 @@ def outer_make_train(config):
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train: bool = False, left_drift: bool = False, small_paddle: bool = False):
+        def create_env(train: bool = False, left_drift: bool = False, small_paddle: bool = False, noisy_eval: bool = False):
             env = JaxBreakout(reward_funcs=reward_funcs)
             if left_drift:
                 env = SpeedMode(env)
@@ -77,14 +86,13 @@ def outer_make_train(config):
             if train:
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability if noisy_eval else 1.0, std_dev=noise_std_dev if noisy_eval else 0.0)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False, False)
-        test_env = create_env(False, False, False)
-        test_env_modif = create_env(False, False, False) # evaluate on mod
+        eval_envs = _build_eval_envs(create_env, config) 
         renderer = BreakoutRenderer()
 
     elif config.get("ENV_NAME", None) == "Freeway":
@@ -99,7 +107,7 @@ def outer_make_train(config):
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train: bool = False, stop_all_cars: bool = False, stop_random_cars: bool = False, speed_mode: bool = False): 
+        def create_env(train: bool = False, stop_all_cars: bool = False, stop_random_cars: bool = False, speed_mode: bool = False, noisy_eval: bool = False): 
             env = JaxFreeway(reward_funcs=reward_funcs)
             if stop_all_cars:
                 env = AlwaysStopAllCars(env)
@@ -111,14 +119,13 @@ def outer_make_train(config):
             if train:
                 env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability if noisy_eval else 1.0, std_dev=noise_std_dev if noisy_eval else 0.0)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False, False, False) # train on default
-        test_env = create_env(False, False, False, False) # evaluate on default
-        test_env_modif = create_env(False, False, True, False) # evaluate on mod
+        eval_envs = _build_eval_envs(create_env, config) 
         renderer = FreewayRenderer()
 
 
@@ -173,7 +180,7 @@ def outer_make_train(config):
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train: bool = False, no_enemies: bool = False):
+        def create_env(train: bool = False, no_enemies: bool = False, noisy_eval: bool = False):
             env = JaxSeaquest(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
@@ -183,7 +190,7 @@ def outer_make_train(config):
                 else:
                     env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=1.0, std_dev=0.0)
             else:
-                if noisy_evaluation:
+                if noisy_eval:
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev)
                 else:
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0)
@@ -196,8 +203,7 @@ def outer_make_train(config):
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
-        test_env = create_env(False, False)
-        test_env_modif = create_env(False, True)
+        eval_envs = _build_eval_envs(create_env, config) 
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected 
@@ -224,7 +230,7 @@ def outer_make_train(config):
 
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train=False, no_enemies: bool = False):
+        def create_env(train=False, no_enemies: bool = False, noisy_eval: bool = False):
             env = JaxKangaroo(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableThreadsWrapper(env)
@@ -234,7 +240,7 @@ def outer_make_train(config):
                 else:
                     env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=1.0, std_dev=0.0, first_fire=False)
             else:
-                if noisy_evaluation:
+                if noisy_eval:
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev, first_fire=False)
                 else:
                     env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0, first_fire=False)
@@ -246,8 +252,7 @@ def outer_make_train(config):
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
-        test_env = create_env(False, False)
-        test_env_modif = create_env(False, True)
+        eval_envs = _build_eval_envs(create_env, config) 
         renderer = KangarooRenderer()
     # only quick PQN test:
     elif "Craftax" in config.get("ENV_NAME", None):
@@ -357,12 +362,12 @@ def outer_make_train(config):
                 return make_train_pqn_craftax(config, env, test_env, test_env_modif, env_params, meta_policy, renderer)
     else:
         if config.get("HIERARCHICAL", False):
-            return make_train_hier_jaxatari(config, env, test_env, test_env_modif, meta_policy, llm_meta_policy, renderer)
+            return make_train_hier_jaxatari(config, env, eval_envs, meta_policy, llm_meta_policy, renderer)
         else:
             if not config.get("OBJECT_CENTRIC", True):
                 print("Using pixel-based observations and convolutional networks.")
-                return make_train_pqn_jaxatari_img(config, env, test_env, test_env_modif, meta_policy, renderer)
-            return make_train_pqn_jaxatari(config, env, test_env, test_env_modif, meta_policy, renderer)
+                return make_train_pqn_jaxatari_img(config, env, eval_envs, meta_policy, renderer)
+            return make_train_pqn_jaxatari(config, env, eval_envs, meta_policy, renderer)
         
 def load_network_params(config):
     if config.get("LOAD_PARAMS", False) and config.get("LOAD_PATH", None) is not None:

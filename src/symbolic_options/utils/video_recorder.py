@@ -109,7 +109,7 @@ class CraftaxClassicRenderer(CraftaxRenderer):
 
 # video_thread = None
 
-def video_callback(states, active_agents, combined_qs, dones, step, renderer, modif=False):
+def video_callback(states, active_agents, combined_qs, dones, step, renderer, modif=False, label="default"):
     # global video_thread
 
     if renderer is None:
@@ -120,15 +120,16 @@ def video_callback(states, active_agents, combined_qs, dones, step, renderer, mo
     #     print("Thread is still running, skipping video generation")
     #     return
     
-    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, combined_qs, dones, step, renderer, modif))
+    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, combined_qs, dones, step, renderer), kwargs={"label": label})
     video_thread.start()
+    video_thread.join()
 
 def add_active_agent(screen, active_agent_num: int):
     font = pygame.font.Font(None, 50)
     text_surface = font.render(f"active agent: {active_agent_num}", True, (255, 255, 255)) 
     screen.blit(text_surface, (300, 300)) 
 
-def collect_video(states, active_agents, combined_qs, dones, step, renderer, modif=False):
+def collect_video(states, active_agents, combined_qs, dones, step, renderer, modif=False, label="default"):
     print("Rendering video...")
     video_folder = f"{wandb.run.dir}/media/videos/"
     os.makedirs(video_folder, exist_ok=True)
@@ -200,9 +201,16 @@ def collect_video(states, active_agents, combined_qs, dones, step, renderer, mod
         frames = new_frames
 
     fps = 30 #if not isinstance(renderer, CraftaxRenderer) else 30
-    video = wandb.Video(frames, fps=fps, format="mp4")
-    name = f"video_{step}"
-    if modif:
-        name = f"video_{step}_modif"
-    wandb.log({name: video}, step=wandb.run.step)
-    print("Video done.")
+    try:
+        video = wandb.Video(frames, fps=fps, format="mp4")
+        # Use label for naming if provided (new API), fall back to modif bool (old API)
+        if label != "default":
+            name = f"video_{step}_{label}"
+        elif modif:
+            name = f"video_{step}_modif"
+        else:
+            name = f"video_{step}"
+        wandb.log({name: video}, step=wandb.run.step)
+        print("Video done.")
+    except RuntimeError as e:
+        print(f"Video recording skipped (shutdown): {e}")
