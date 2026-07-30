@@ -1,5 +1,5 @@
 import os
-import time
+import queue
 import threading
 from functools import partial
 
@@ -107,22 +107,46 @@ class CraftaxClassicRenderer(CraftaxRenderer):
         return self.render_fn(craftax_state, block_pixel_size=block_pixel_size)
 
 
-# video_thread = None
+_video_queue: queue.Queue = queue.Queue(maxsize=0)
+_SENTINEL = object()
+
+
+def _video_worker():
+    """Background worker that renders videos one at a time from the queue."""
+    while True:
+        item = _video_queue.get(block=True)
+        if item is _SENTINEL:
+            _video_queue.task_done()
+            break
+        try:
+            collect_video(**item)
+        except Exception as e:
+            print(f"Video worker error: {e}")
+        _video_queue.task_done()
+
+
+# Start the daemon worker thread unconditionally.
+_worker_thread = threading.Thread(target=_video_worker, daemon=True)
+_worker_thread.start()
+
 
 def video_callback(states, active_agents, combined_qs, dones, step, renderer, modif=False, label="default"):
-    # global video_thread
-
     if renderer is None:
         print("Renderer is None, skipping video generation")
         return
 
-    # if video_thread is not None and video_thread.is_alive():
-    #     print("Thread is still running, skipping video generation")
-    #     return
-    
-    video_thread = threading.Thread(target=collect_video, args=(states, active_agents, combined_qs, dones, step, renderer), kwargs={"label": label})
-    video_thread.start()
-    video_thread.join()
+    _video_queue.put(
+        {
+            "states": states,
+            "active_agents": active_agents,
+            "combined_qs": combined_qs,
+            "dones": dones,
+            "step": step,
+            "renderer": renderer,
+            "modif": modif,
+            "label": label,
+        }
+    )
 
 def add_active_agent(screen, active_agent_num: int):
     font = pygame.font.Font(None, 50)

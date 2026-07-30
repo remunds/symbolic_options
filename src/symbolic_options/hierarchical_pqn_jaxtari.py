@@ -126,30 +126,6 @@ def make_train(config, env, eval_envs, meta_policy, meta_policy_llm, renderer):
         )
         return chosen_actions
 
-    def filter_actions(actions):
-        #(N_agents, n_envs)
-        # TODO: adapt ability to do this for all methods.
-        # For now: Hardcoded in case of seaquest
-        agent_idx = 1 #0: shoot enemies, 1: collect divers, 2:surface
-        agent_actions = actions[agent_idx]
-        fire_mask = jnp.isin(agent_actions, jnp.array([
-                    Action.FIRE,
-                    Action.UPRIGHTFIRE,
-                    Action.UPLEFTFIRE,
-                    Action.DOWNFIRE,
-                    Action.DOWNRIGHTFIRE,
-                    Action.DOWNLEFTFIRE,
-                    Action.RIGHTFIRE,
-                    Action.LEFTFIRE,
-                    Action.UPFIRE,
-        ]))
-        # set fire actions to NOOP
-        filtered_actions = jnp.where(fire_mask, Action.NOOP, agent_actions)
-        actions = actions.at[agent_idx].set(filtered_actions)
-        return actions
-
-
-
     def train(rng, params, batch_stats):
 
         original_rng = rng[0]
@@ -247,7 +223,6 @@ def make_train(config, env, eval_envs, meta_policy, meta_policy_llm, renderer):
                         last_obs,
                         train=False,
                     )
-                    #NOTE: added by me to filter q-vals for shooting in seaquest diver option
                     # different eps for each env
                     _rngs = jax.random.split(rng_a, config["NUM_ENVS"])
                     eps = jnp.full(config["NUM_ENVS"], eps_scheduler(train_state.n_updates))
@@ -255,9 +230,6 @@ def make_train(config, env, eval_envs, meta_policy, meta_policy_llm, renderer):
                     return new_action, q_vals
 
                 all_actions, all_q_vals = jax.vmap(compute_actions)(train_states)
-
-                #(n_agents, n_envs, n_actions)
-                all_actions = filter_actions(all_actions)
 
                 meta_policy_mode = config.get("META_POLICY", "llm")
                 llm_pretrain = config.get("LLM_PRETRAIN", False)
@@ -631,7 +603,6 @@ def make_train(config, env, eval_envs, meta_policy, meta_policy_llm, renderer):
                     return new_action, q_vals
 
                 all_actions, all_q_vals = jax.vmap(compute_actions)(train_states)
-                all_actions = filter_actions(all_actions)
 
                 meta_policy_mode = config.get("META_POLICY", "llm")
                 llm_pretrain = config.get("LLM_PRETRAIN", False)

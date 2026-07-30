@@ -212,6 +212,7 @@ class KangarooState(NamedTuple):
     levelup: chex.Array
     lives: chex.Array
     max_height: chex.Array
+    levels_completed: chex.Array
 
 
 class KangarooObservation(NamedTuple):
@@ -233,6 +234,7 @@ class KangarooInfo(NamedTuple):
     level: chex.Array
     all_rewards: chex.Array
     max_height: chex.Array
+    game_progress: chex.Array
 
 # Level Constants
 LADDER_HEIGHT = jnp.array(35)
@@ -1831,6 +1833,7 @@ class JaxKangaroo(JaxEnvironment[KangarooState, KangarooObservation, KangarooInf
             levelup=jnp.array(False),
             lives=jnp.array(3),
             max_height=jnp.array(PLAYER_START_Y),
+            levels_completed=jnp.array(0),
         )
         return new_state
 
@@ -2042,6 +2045,7 @@ class JaxKangaroo(JaxEnvironment[KangarooState, KangarooObservation, KangarooInf
                 levelup=new_levelup,
                 lives=new_lives,
                 max_height=jnp.minimum(state.max_height, new_player_state.y),
+                levels_completed=state.levels_completed + new_levelup.astype(jnp.int32),
             ),
         )
         done = self._get_done(new_state)
@@ -2093,11 +2097,15 @@ class JaxKangaroo(JaxEnvironment[KangarooState, KangarooObservation, KangarooInf
 
     @partial(jax.jit, static_argnums=(0,))
     def _get_info(self, state: KangarooState, all_rewards: chex.Array) -> KangarooInfo:
+        # game_progress = levels_completed + fraction of current level completed
+        progress_in_level = 1 - (state.max_height - 13) / (148 - 13)
+        game_progress = state.levels_completed.astype(jnp.float32) + progress_in_level
         return KangarooInfo(
             score=state.score,
             level=state.current_level,
             all_rewards=all_rewards,
             max_height=state.max_height,
+            game_progress=game_progress,
         )
 
     @partial(jax.jit, static_argnums=(0,))

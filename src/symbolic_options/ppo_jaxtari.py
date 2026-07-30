@@ -210,23 +210,33 @@ def make_train(config):
         if config.get("META_SHAPED_REWARD", False):
             reward_funcs.append(shaped_reward)
 
+        noisy_training = config.get("NOISY_TRAINING", False)
+        noisy_evaluation = config.get("NOISY_EVAL", False)
+        detection_probability = config.get("DETECT_PROB", 1.0)
+        noise_std_dev = config.get("NOISE_STD_DEV", 0.0)
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train: bool = False, no_enemies: bool = False):
+        def create_env(train: bool = False, no_enemies: bool = False, noisy_eval: bool = False):
             env = JaxSeaquest(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableEnemiesWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life)
+                if noisy_training:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=detection_probability, std_dev=noise_std_dev)
+                else:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=1.0, std_dev=0.0)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False)
+                if noisy_eval or noisy_evaluation:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev)
+                else:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
-        test_env = create_env(False, False)
-        test_env_modif = create_env(False, True)
+        test_env = create_env(False, False, noisy_eval=noisy_evaluation)
+        test_env_modif = create_env(False, True, noisy_eval=noisy_evaluation)
         renderer = SeaquestRenderer()
     elif config.get("ENV_NAME", None) == "Kangaroo":
         from symbolic_options.reward_functions.kangaroo import navigate_reward, handle_enemies_reward, collect_fruits_reward, env_reward, reached_platform_level, enemies_killed, fruits_collected 
@@ -241,23 +251,33 @@ def make_train(config):
         if config.get("NO_REWARDS", False):
             reward_funcs = [env_reward, env_reward, env_reward] #use env_reward for all options
 
+        noisy_training = config.get("NOISY_TRAINING", False)
+        noisy_evaluation = config.get("NOISY_EVAL", False)
+        detection_probability = config.get("DETECT_PROB", 1.0)
+        noise_std_dev = config.get("NOISE_STD_DEV", 0.0)
         sticky_actions = config.get("STICKY_ACTIONS", False)
         episodic_life = config.get("EPISODIC_LIFE", False)
-        def create_env(train=False, no_enemies: bool = False):
+        def create_env(train=False, no_enemies: bool = False, noisy_eval: bool = False):
             env = JaxKangaroo(reward_funcs=reward_funcs)
             if no_enemies:
                 env = DisableThreadsWrapper(env)
             if train:
-                env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, first_fire=False)
+                if noisy_training:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=detection_probability, std_dev=noise_std_dev, first_fire=False)
+                else:
+                    env = AtariWrapper(env, sticky_actions=sticky_actions, episodic_life=episodic_life, detect_prob=1.0, std_dev=0.0, first_fire=False)
             else:
-                env = AtariWrapper(env, sticky_actions=False, episodic_life=False, first_fire=False)
+                if noisy_eval or noisy_evaluation:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=detection_probability, std_dev=noise_std_dev, first_fire=False)
+                else:
+                    env = AtariWrapper(env, sticky_actions=False, episodic_life=False, detect_prob=1.0, std_dev=0.0, first_fire=False)
             env = ObjectCentricWrapper(env)
             env = FlattenObservationWrapper(env)
             env = MultiRewardLogWrapper(env)
             return env
         env = create_env(True, False)
-        test_env = create_env(False, False)
-        test_env_modif = create_env(False, True)
+        test_env = create_env(False, False, noisy_eval=noisy_evaluation)
+        test_env_modif = create_env(False, True, noisy_eval=noisy_evaluation)
         renderer = KangarooRenderer()
 
     vmap_reset = lambda n_envs: lambda rng: jax.vmap(env.reset)(

@@ -467,6 +467,8 @@ def single_run(config):#
             save_params(batch_stats, save_path_bs)
             print(f"Saved params to {save_path}")
 
+    wandb.finish()
+
 
 def tune(default_config):
     """Hyperparameter sweep with wandb."""
@@ -489,6 +491,7 @@ def tune(default_config):
         params, batch_stats = load_network_params(config)
         train_vjit = jax.jit(jax.vmap(outer_make_train(config)))
         outs = jax.block_until_ready(train_vjit(rngs, params, batch_stats))
+        wandb.finish()
 
 
     sweep_config = {

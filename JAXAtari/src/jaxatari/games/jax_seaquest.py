@@ -97,6 +97,7 @@ class SeaquestState(NamedTuple):
     player_direction: chex.Array  # 0 for right, 1 for left
     oxygen: chex.Array
     divers_collected: chex.Array
+    total_divers_collected: chex.Array  # Cumulative count of divers collected across the episode
     score: chex.Array
     lives: chex.Array
     spawn_state: SpawnState
@@ -157,6 +158,7 @@ class SeaquestInfo(NamedTuple):
     successful_rescues: jnp.ndarray  # Number of successful rescues
     step_counter: jnp.ndarray  # Current step count
     all_rewards: jnp.ndarray  # All rewards for the current step
+    total_divers_collected: jnp.ndarray  # Cumulative count of divers collected
 
 
 class CarryState(NamedTuple):
@@ -2446,6 +2448,7 @@ class JaxSeaquest(JaxEnvironment[SeaquestState, SeaquestObservation, SeaquestInf
             difficulty=state.spawn_state.difficulty,
             step_counter=state.step_counter,
             all_rewards=all_rewards,
+            total_divers_collected=state.total_divers_collected,
         )
 
     @partial(jax.jit, static_argnums=(0,))
@@ -2472,6 +2475,7 @@ class JaxSeaquest(JaxEnvironment[SeaquestState, SeaquestObservation, SeaquestInf
             player_direction=jnp.array(0),
             oxygen=jnp.array(0),  # Full oxygen
             divers_collected=jnp.array(0),
+            total_divers_collected=jnp.array(0),
             score=jnp.array(0),
             lives=jnp.array(3),
             spawn_state=self.initialize_spawn_state(),
@@ -2551,6 +2555,7 @@ class JaxSeaquest(JaxEnvironment[SeaquestState, SeaquestObservation, SeaquestInf
                         score=state.score,
                         successful_rescues=state.successful_rescues,
                         divers_collected=jnp.maximum(state.divers_collected - 1, 0),
+                        total_divers_collected=state.total_divers_collected,
                         spawn_state=self.soft_reset_spawn_state(state.spawn_state),
                     )
 
@@ -2603,6 +2608,7 @@ class JaxSeaquest(JaxEnvironment[SeaquestState, SeaquestObservation, SeaquestInf
                     lives=state.lives,
                     successful_rescues=state.successful_rescues,
                     divers_collected=jnp.array(0),
+                    total_divers_collected=state.total_divers_collected,
                     spawn_state=self.soft_reset_spawn_state(state.spawn_state),
                     surface_sub_position=state.surface_sub_position,
                     oxygen=jnp.array(0),
@@ -2800,6 +2806,10 @@ class JaxSeaquest(JaxEnvironment[SeaquestState, SeaquestObservation, SeaquestInf
                 state_updated.step_counter + 1,
             )
 
+            # Track cumulative divers collected
+            diver_delta = jnp.maximum(new_divers_collected - state_updated.divers_collected, 0)
+            new_total_divers_collected = state_updated.total_divers_collected + diver_delta
+
             # Create the normal returned state
             normal_returned_state = SeaquestState(
                 player_x=player_x,
@@ -2807,6 +2817,7 @@ class JaxSeaquest(JaxEnvironment[SeaquestState, SeaquestObservation, SeaquestInf
                 player_direction=player_direction,
                 oxygen=new_oxygen,
                 divers_collected=new_divers_collected,
+                total_divers_collected=new_total_divers_collected,
                 score=new_score,
                 lives=state_updated.lives,
                 spawn_state=new_spawn_state._replace(
