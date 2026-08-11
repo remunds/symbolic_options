@@ -66,8 +66,3 @@ eval_envs:
   - label: "mod"
     no_enemies: True
     noisy_eval: false
-
-# Few-shot training
-TRAIN_ON_MODIF: True
-RESET_META: True
-TEST_UPDATE_TIMESTEPS: 1e6

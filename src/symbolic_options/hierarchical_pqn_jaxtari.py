@@ -313,7 +313,7 @@ def make_train(config, env, eval_envs, meta_policy, meta_policy_llm, renderer):
                     rewards=config.get("REW_SCALE", 1)*rewards,
                     done=new_done,
                     next_obs=new_obs,
-                    q_val=all_q_vals,
+                    q_val=jnp.transpose(all_q_vals, (1, 0, 2)),
                     meta_q_val=combined_q
                 )
                 return (new_obs, new_env_state, rng), (transition, info)
@@ -368,7 +368,7 @@ def make_train(config, env, eval_envs, meta_policy, meta_policy_llm, renderer):
                         # state_idx == num_agents,
                         jnp.logical_or(state_idx == -1, state_idx == -2),
                         lambda _: jnp.max(transition.meta_q_val, axis=-1),
-                        lambda _: jnp.max(transition.q_val[state_idx, jnp.arange(config["NUM_ENVS"]), :], axis=-1),
+                        lambda _: jnp.max(transition.q_val[:, state_idx, :], axis=-1),
                         operand=None,
                     )
                     return (lambda_returns, next_q), lambda_returns

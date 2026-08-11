@@ -65,6 +65,3 @@ eval_envs:
   - label: "mod"
     no_enemies: true
     noisy_eval: false
-  - label: "mod_noisy"
-    no_enemies: true
-    noisy_eval: true

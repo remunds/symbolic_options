@@ -19,13 +19,13 @@ NUM_EPOCHS: 5
 NUM_MINIBATCHES: 128 # minibatches per epoch
 NORM_TYPE: "layer_norm" # layer_norm or batch_norm
 NORM_INPUT: False 
-LR: 2.5e-4
+LR: 1.0e-4
 MAX_GRAD_NORM: 10
 # MAX_GRAD_NORM: 0.5 
 LR_LINEAR_DECAY: False #True
 GAMMA: 0.99
 LAMBDA: 0.65
-META_LAMBDA: 0.9 #not in use
+META_LAMBDA: 0.9
 HIDDEN_SIZE: 64
 NUM_LAYERS: 3
 STICKY_ACTIONS: False
@@ -67,6 +67,3 @@ eval_envs:
   - label: "mod"
     no_enemies: true
     noisy_eval: false
-  - label: "mod_noisy"
-    no_enemies: true
-    noisy_eval: true

@@ -1,201 +1,127 @@
-# run sh command
+#!/usr/bin/env python3
+"""
+Run multiple experiment configs across a list of GPUs.
+
+Usage:
+    python start_exps.py --gpus=0,1,2,3
+
+Each config is dispatched to the next free GPU. The script keeps all GPUs busy
+until every config has finished.
+"""
+
+import argparse
+import os
+import queue
 import subprocess
-import sys
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
-def run_sh_command(command):
-    """
-    Run a shell command and return the output.
-    """
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        print(f"Error: {stderr.decode('utf-8')}")
-        sys.exit(1)
-    return stdout.decode('utf-8')
+# ── Define all runs ──────────────────────────────────────────────────────────
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea1_noisy0")
-# print("PQN done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea2_hier_baseline_noisy0")
-# print("HPQN done.")
+@dataclass
+class RunSpec:
+    alg: str          # config name (e.g. "pqn_jaxtari_k1_noisy0")
+    script: str = "main.py"  # "main.py" or "src/symbolic_options/ppo_jaxtari.py"
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea1_img")
-# print("PQN img sea done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=3 uv run main.py +alg=pqn_jaxtari_k1_img")
-# print("PQN img k done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run main.py +alg=pqn_jaxtari_sea1_shapedreward")
-# print("PQN shaped reward sea done.") 
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run main.py +alg=pqn_jaxtari_k1_shapedreward")
-# print("PQN shaped reward k done.") 
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run main.py +alg=pqn_jaxtari_sea1_shapedreward_simple")
-# print("PQN shaped reward simple sea done.") 
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run main.py +alg=pqn_jaxtari_k1_shapedreward_simple")
-# print("PQN shaped reward simple k done.") 
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run main.py +alg=pqn_jaxtari_sea1_shapedreward_llm")
-# print("PQN shaped reward llm sea done.") 
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run main.py +alg=pqn_jaxtari_k1_shapedreward_llm")
-# print("PQN shaped reward llm k done.") 
+RUNS = [
+    # ── Seaquest noisy0 (trained WITH noise) ──
+    # RunSpec("pqn_jaxtari_sea1_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_sea2_hier_baseline_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_sea2_hier_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_sea3_hier_llm_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_sea4_hier_comb_noisy0_scaling"),
+    # RunSpec("ppo_jaxtari_seaquest_noisy0_scaling", script="src/symbolic_options/ppo_jaxtari.py"),
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=3 uv run main.py +alg=pqn_jaxtari_k1_noisy0")
-# print("PQN done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=3 uv run main.py +alg=pqn_jaxtari_k2_hier_baseline_noisy0")
-# print("HPQN done.")
+    # # ── Seaquest noisy1 (noisy eval only) ──
+    # RunSpec("pqn_jaxtari_sea1_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_sea2_hier_baseline_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_sea2_hier_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_sea3_hier_llm_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_sea4_hier_comb_noisy1_scaling"),
+    # RunSpec("ppo_jaxtari_seaquest_noisy1_scaling", script="src/symbolic_options/ppo_jaxtari.py"),
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=15 uv run main.py +alg=pqn_jaxtari_sea1")
-# print("sea1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=6 uv run main.py +alg=pqn_jaxtari_sea2_hier_baseline")
-# print("sea2 baseline done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=6 uv run main.py +alg=pqn_jaxtari_sea2_hier")
-# print("sea2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea3_hier_llm")
-# print("sea3 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea4_hier_comb")
-# print("sea4 done.")
+    # # ── Kangaroo noisy0 (trained WITH noise) ──
+    # RunSpec("pqn_jaxtari_k1_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_k2_hier_baseline_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_k2_hier_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_k3_hier_llm_noisy0_scaling"),
+    # RunSpec("pqn_jaxtari_k4_hier_comb_noisy0_scaling"),
+    # RunSpec("ppo_jaxtari_kangaroo_noisy0_scaling", script="src/symbolic_options/ppo_jaxtari.py"),
 
-# same for k1 - k4
-# run_sh_command("CUDA_VISIBLE_DEVICES=14 uv run main.py +alg=pqn_jaxtari_k1")
-# print("k1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=7 uv run main.py +alg=pqn_jaxtari_k2_hier_baseline")
-# print("k2 baseline done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=7 uv run main.py +alg=pqn_jaxtari_k2_hier")
-# print("k2 done.")
-# # run_sh_command("CUDA_VISIBLE_DEVICES=14 uv run main.py +alg=pqn_jaxtari_k3_hier_llm")
-# # print("k3 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=7 uv run main.py +alg=pqn_jaxtari_k4_hier_comb")
-# print("k4 done.")   
+    # ── Kangaroo noisy1 (noisy eval only) ──
+    # RunSpec("pqn_jaxtari_k1_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_k2_hier_baseline_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_k2_hier_noisy1_scaling"),
+    # RunSpec("pqn_jaxtari_k3_hier_llm_noisy1_scaling"),
+    RunSpec("pqn_jaxtari_k4_hier_comb_noisy1_scaling"),
+    # RunSpec("ppo_jaxtari_kangaroo_noisy1_scaling", script="src/symbolic_options/ppo_jaxtari.py"),
+]
 
-# # same for pong1 - pong4
-# run_sh_command("CUDA_VISIBLE_DEVICES=13 uv run main.py +alg=pqn_jaxtari_pong1")
-# print("pong1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=8 uv run main.py +alg=pqn_jaxtari_pong2_hier_baseline")
-# print("pong2 baseline done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=8 uv run main.py +alg=pqn_jaxtari_pong2_hier")
-# print("pong2 done.")
-# # run_sh_command("CUDA_VISIBLE_DEVICES=13 uv run main.py +alg=pqn_jaxtari_pong3_hier_llm")
-# # print("pong3 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=8 uv run main.py +alg=pqn_jaxtari_pong4_hier_comb")
-# print("pong4 done.")
-
-# same for breakout1 - breakout4
-# # run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_jaxtari_breakout1")
-# print("breakout1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=9 uv run main.py +alg=pqn_jaxtari_breakout2_hier_baseline")
-# print("breakout2 baseline done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=9 uv run main.py +alg=pqn_jaxtari_breakout2_hier")
-# print("breakout2 done.")
-# # run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_jaxtari_breakout3_hier_llm")
-# # print("breakout3 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=9 uv run main.py +alg=pqn_jaxtari_breakout4_hier_comb")
-# print("breakout4 done.")
-
-# # same for freeway1 - freeway4
-# run_sh_command("CUDA_VISIBLE_DEVICES=11 uv run main.py +alg=pqn_jaxtari_freeway1")
-# print("freeway1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=10 uv run main.py +alg=pqn_jaxtari_freeway2_hier_baseline")
-# print("freeway2 baseline done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=10 uv run main.py +alg=pqn_jaxtari_freeway2_hier")
-# print("freeway2 done.")
-# # run_sh_command("CUDA_VISIBLE_DEVICES=11 uv run main.py +alg=pqn_jaxtari_freeway3_hier_llm")
-# # print("freeway3 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=10 uv run main.py +alg=pqn_jaxtari_freeway4_hier_comb")
-# print("freeway4 done.") 
-
-# PPO's
-# run_sh_command("CUDA_VISIBLE_DEVICES=10 uv run src/symbolic_options/ppo_jaxtari.py +alg=ppo_jaxtari_pong")
-# print("pong done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=9 uv run src/symbolic_options/ppo_jaxtari.py +alg=ppo_jaxtari_freeway")
-# print("freeway done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=8 uv run src/symbolic_options/ppo_jaxtari.py +alg=ppo_jaxtari_breakout")
-# print("breakout done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=7 uv run src/symbolic_options/ppo_jaxtari.py +alg=ppo_jaxtari_seaquest")
-# print("seaquest done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=4 uv run src/symbolic_options/ppo_jaxtari.py +alg=ppo_jaxtari_kangaroo_noisy0")
-# print("ppo kangaroo noisy done.") 
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run src/symbolic_options/ppo_jaxtari.py +alg=ppo_jaxtari_seaquest_noisy0")
-# print("ppo seaquest noisy done.")
+WORKERS_PER_GPU = 1
 
 
-# Craftax RNN (3 seeds each)
-# run_sh_command("CUDA_VISIBLE_DEVICES=15 uv run main.py +alg=pqn_craftax_rnn SEED=0")
-# print("craftax rnn 1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=15 uv run main.py +alg=pqn_craftax_rnn SEED=1")
-# print("craftax rnn 2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=15 uv run main.py +alg=pqn_craftax_rnn SEED=2")
-# print("craftax rnn 3 done.")
+def worker(gpu_id: str, task_queue: queue.Queue, extra_args: list):
+    """Continuously fetch tasks from the queue and run them on the assigned GPU."""
+    while not task_queue.empty():
+        try:
+            spec = task_queue.get_nowait()
+        except queue.Empty:
+            break
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=14 uv run main.py +alg=pqn_craftax_rnn_hier_baseline SEED=0")
-# print("craftax rnn hier baseline 1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=14 uv run main.py +alg=pqn_craftax_rnn_hier_baseline SEED=1")
-# print("craftax rnn hier baseline 2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=14 uv run main.py +alg=pqn_craftax_rnn_hier_baseline SEED=2")
-# print("craftax rnn hier baseline 3 done.")
+        print(f"[GPU {gpu_id}] Starting {spec.alg} (script: {spec.script})...")
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=13 uv run main.py +alg=pqn_craftax_rnn_hier SEED=0")
-# print("craftax rnn hier 1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=13 uv run main.py +alg=pqn_craftax_rnn_hier SEED=1")
-# print("craftax rnn hier 2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=13 uv run main.py +alg=pqn_craftax_rnn_hier SEED=2")
-# print("craftax rnn hier 3 done.")
+        env_vars = os.environ.copy()
+        env_vars["CUDA_VISIBLE_DEVICES"] = gpu_id
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_craftax_rnn_hier_llm SEED=0")
-# print("craftax rnn hier llm 1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_craftax_rnn_hier_llm SEED=1")
-# print("craftax rnn hier llm 2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=12 uv run main.py +alg=pqn_craftax_rnn_hier_llm SEED=2")
-# print("craftax rnn hier llm 3 done.")
+        cmd = [
+            "uv", "run", spec.script,
+            f"+alg={spec.alg}",
+        ] + extra_args
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=11 uv run main.py +alg=pqn_craftax_rnn_hier_comb SEED=0")
-# print("craftax rnn hier comb 1 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=11 uv run main.py +alg=pqn_craftax_rnn_hier_comb SEED=1")
-# print("craftax rnn hier comb 2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=11 uv run main.py +alg=pqn_craftax_rnn_hier_comb SEED=2")
-# print("craftax rnn hier comb 3 done.")
-
-# ---- Noisy experiments ----
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k2_hier_baseline_noisy0")
-print("k2 baseline done.")
-
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k1_noisy0")
-print("k1 baseline done.")
-
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea2_hier_noisy0")
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea2_hier_noisy1")
-# print("sea2 done.")
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k2_hier_noisy0")
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k2_hier_noisy1")
-print("k2 done.")
-
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea3_hier_llm_noisy0")
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea3_hier_llm_noisy1")
-# print("sea3 done.")
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k3_hier_llm_noisy0")
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k3_hier_llm_noisy1")
-print("k3 done.")
-
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea4_hier_comb_noisy0")
-# run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_sea4_hier_comb_noisy1")
-# print("sea4 done.")
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k4_hier_comb_noisy0")
-run_sh_command("CUDA_VISIBLE_DEVICES=2 uv run main.py +alg=pqn_jaxtari_k4_hier_comb_noisy1")
-print("k4 done.")
+        try:
+            subprocess.run(cmd, env=env_vars, check=True)
+            print(f"[GPU {gpu_id}] Finished {spec.alg} (exit code 0)")
+        except subprocess.CalledProcessError as e:
+            print(f"[GPU {gpu_id}] FAILED {spec.alg} (exit code {e.returncode})")
+        finally:
+            task_queue.task_done()
 
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_sea2_hier_noisy2")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_sea2_hier_noisy3")
-# print("sea2 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_k2_hier_noisy2")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_k2_hier_noisy3")
-# print("k2 done.")
+def main():
+    parser = argparse.ArgumentParser(description="Dispatch experiment configs across GPUs.")
+    parser.add_argument(
+        "--gpus",
+        type=str,
+        required=True,
+        help="Comma-separated list of GPU indices, e.g. --gpus=0,1,2,3",
+    )
+    args, extra_args = parser.parse_known_args()
+    gpu_list = [g.strip() for g in args.gpus.split(",") if g.strip()]
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_sea3_hier_llm_noisy2")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_sea3_hier_llm_noisy3")
-# print("sea3 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_k3_hier_llm_noisy2")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_k3_hier_llm_noisy3")
-# print("k3 done.")
+    if not gpu_list:
+        print("Error: No GPUs specified.")
+        return
 
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_sea4_hier_comb_noisy2")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_sea4_hier_comb_noisy3")
-# print("sea4 done.")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_k4_hier_comb_noisy2")
-# run_sh_command("CUDA_VISIBLE_DEVICES=5 uv run main.py +alg=pqn_jaxtari_k4_hier_comb_noisy3")
-# print("k4 done.")
+    # ── Populate task queue ──
+    task_queue = queue.Queue()
+    for spec in RUNS:
+        task_queue.put(spec)
+
+    total_runs = len(RUNS)
+    total_workers = len(gpu_list) * WORKERS_PER_GPU
+    print(f"Dispatching {total_runs} runs across {len(gpu_list)} GPUs: {gpu_list}")
+    print(f"Extra args: {' '.join(extra_args) if extra_args else 'None'}")
+
+    with ThreadPoolExecutor(max_workers=total_workers) as executor:
+        for gpu_id in gpu_list:
+            for _ in range(WORKERS_PER_GPU):
+                executor.submit(worker, gpu_id, task_queue, extra_args)
+
+    task_queue.join()
+    print(f"\n{'='*60}")
+    print(f"All {total_runs} runs completed!")
+    print(f"{'='*60}")
+
+
+if __name__ == "__main__":
+    main()

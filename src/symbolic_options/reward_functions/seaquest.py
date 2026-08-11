@@ -21,7 +21,7 @@ def env_reward(prev_state: SeaquestState, state: SeaquestState):
 
 @jax.jit
 def collect_divers_reward(prev_state: SeaquestState, state: SeaquestState):
-    # return +1 if new diver was collected
+    # return +n_divers_collected if new diver was collected
     reward = jnp.where(state.divers_collected > prev_state.divers_collected, state.divers_collected, 0)
     return reward
 
