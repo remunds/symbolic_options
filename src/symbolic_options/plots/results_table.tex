@@ -1,0 +1,23 @@
+\begin{table}
+\centering
+\caption{Performance Comparison on Seaquest and Kangaroo}
+\label{tab:performance_comp}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l | cc cc || cc cc}
+\hline
+\multirow{2}{*}{\textbf{Algorithm}} & \multicolumn{4}{c||}{\textbf{Seaquest}} & \multicolumn{4}{c}{\textbf{Kangaroo}} \\
+ & Default & Divers Collected & Simplification & Divers Collected & Default & Level Completion (\%) & Simplification & Level Completion (\%) \\
+\hline
+
+PPO & 915.3 $\pm$ 101.1 & (6.7 $\pm$ 0.1) & 0.0 $\pm$ 0.0 & (4.7 $\pm$ 0.6) & 550.0 $\pm$ 353.6 & (33.3 $\pm$ 0.0) & 150.0 $\pm$ 212.1 & (33.3 $\pm$ 0.0) \\
+PQN & 1361.3 $\pm$ 294.6 & (4.8 $\pm$ 2.8) & 0.0 $\pm$ 0.0 & (4.0 $\pm$ 1.5) & 949.7 $\pm$ 279.9 & (47.3 $\pm$ 0.4) & 338.9 $\pm$ 209.1 & (40.5 $\pm$ 13.6) \\
+NEXUS (neural) & 2100.7 $\pm$ 614.5 & (9.2 $\pm$ 4.2) & 0.0 $\pm$ 0.0 & (6.7 $\pm$ 6.8) & 1889.0 $\pm$ 1770.6 & (70.6 $\pm$ 28.8) & 551.0 $\pm$ 513.2 & (58.9 $\pm$ 30.9) \\
+NEXUS (symbolic) & \textbf{2229.1 $\pm$ 172.9} & (12.4 $\pm$ 0.7) & 9416.7 $\pm$ 4363.2 & (41.0 $\pm$ 13.1) & 1030.3 $\pm$ 553.3 & (83.8 $\pm$ 2.6) & 448.7 $\pm$ 147.4 & (52.0 $\pm$ 9.4) \\
+NEXUS (nesy) & 2185.6 $\pm$ 1000.1 & (10.8 $\pm$ 2.9) & 2483.3 $\pm$ 1607.7 & (15.3 $\pm$ 9.0) & 909.4 $\pm$ 519.1 & (85.6 $\pm$ 12.8) & 674.8 $\pm$ 115.8 & (72.1 $\pm$ 16.9) \\
+NUDGE & 46.7 $\pm$ 23.1 & (4.1 $\pm$ 0.7) & 113.3 $\pm$ 99.6 & (7.3 $\pm$ 4.5) & 1522.2 $\pm$ 661.9 & \textbf{(110.0 $\pm$ 17.3)} & \textbf{1966.7 $\pm$ 290.6} & (101.7 $\pm$ 2.9) \\
+BlendRL & 2138.9 $\pm$ 1636.0 & \textbf{(15.8 $\pm$ 8.6)} & \textbf{24755.6 $\pm$ 29438.4} & \textbf{(55.6 $\pm$ 43.0)} & \textbf{1955.6 $\pm$ 887.8} & (101.7 $\pm$ 2.9) & 1944.4 $\pm$ 300.6 & \textbf{(118.3 $\pm$ 27.5)} \\
+SCoBots & 1055.3 $\pm$ 272.6 & (- $\pm$ -) & 0.0 $\pm$ 0.0 & (- $\pm$ -) & 2776.6 $\pm$ 1332.4 & (- $\pm$ -) & 0.0 $\pm$ 0.0 & (- $\pm$ -) \\
+\hline
+\end{tabular}
+}
+\end{table}
