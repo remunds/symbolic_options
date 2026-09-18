@@ -59,7 +59,7 @@ RECORD_VIDEO: True # in terms of total updates
 eval_envs:
   - label: "clean"
     noisy_eval: false
-    no_enemies: True
+    no_enemies: False
   - label: "mod"
     no_enemies: True
     noisy_eval: false

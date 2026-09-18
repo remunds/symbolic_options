@@ -55,7 +55,7 @@ RECORD_VIDEO: True # in terms of total updates
 eval_envs:
   - label: "clean"
     noisy_eval: false
-    left_drift: True
+    left_drift: False
   - label: "mod"
     left_drift: True
     noisy_eval: false

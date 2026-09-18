@@ -179,3 +179,5 @@ outputs/
 wandb/
 pretrained/
 *.pdf
+
+/wandb_data/

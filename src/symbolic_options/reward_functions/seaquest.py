@@ -250,7 +250,9 @@ def shoot_default_policy(network, meta_train_state, last_obs, env_state: Seaques
 
     # add some randomness 
     # q_vals = q_vals + jax.random.uniform(jax.random.PRNGKey(0), shape=q_vals.shape) * 0.01
-    return q_vals
+    # float32 like every other env's conditional policy: jax.lax.cond/switch trace
+    # all branches, so a bool here breaks META_POLICY="conditional"
+    return q_vals.astype(jnp.float32)
 
 
 # @jax.jit

@@ -18,7 +18,7 @@ bars, rotated tick labels, Original/Modified legend.
 Usage:
     python src/symbolic_options/plots/plots_drop_plot.py \\
         --data-dir src/symbolic_options/plots/wandb_data/nexus_noisy_fix_scaled \\
-        [--best] [--prefix drop_plot]
+        [--best] [--metric aligned|env] [--normalize none|hns] [--prefix drop_plot]
 """
 
 import argparse
@@ -64,6 +64,13 @@ LENS_PROJECT = "raban-emunds-tu-darmstadt/LENS"
 
 # (random, human) env-return for HNS normalisation (notebook cell 11).
 HUMAN_RANDOM = {"craftax-classic-symbolic-v1": (0.0, 14.3)}
+
+# Atari random/human scores (notebook cell 11, dqn_zoo) for HNS of the
+# Seaquest/Kangaroo env-return drop plot.
+ATARI_HUMAN_RANDOM = {
+    "seaquest": (68.4, 42054.7),
+    "kangaroo": (52.0, 3035.0),
+}
 
 DROP_RC = {
     **bundles.neurips2024(usetex=False),
@@ -153,7 +160,14 @@ def craftax_drop_values(api, cache_dir: Path, algo: str) -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def drop_plot(ax, game: str, algos: list[str], orig, orig_std, mod, mod_std, ylabel: str):
+def drop_plot(ax, game: str, algos: list[str], orig, orig_std, mod, mod_std, ylabel: str,
+              zero_mask=None):
+    """Original vs Modified bars.
+
+    zero_mask: optional bool array; True where the measured value is exactly 0.
+    Such bars are drawn at height 0 plus a small black dot with a '0' label so
+    they read as 'ran and scored 0' instead of 'did not run'.
+    """
     colors = sns.color_palette("colorblind")
     pastels = sns.color_palette("pastel")
     x = np.arange(len(algos))
@@ -165,7 +179,34 @@ def drop_plot(ax, game: str, algos: list[str], orig, orig_std, mod, mod_std, yla
     for label in ax.get_xticklabels():
         label.set_rotation(30)
         label.set_ha("right")
-    ax.set_ylim(bottom=0)
+
+    # Mark measured-zero bars so they are distinguishable from absent runs.
+    if zero_mask is not None:
+        n = len(orig)
+        for i, (v, is_zero) in enumerate(zip(orig, zero_mask[:n])):
+            if is_zero:
+                ax.plot(x[i] - 0.2, v, marker="o", markersize=4,
+                       color="black", linestyle="none")
+                ax.text(x[i] - 0.2, v, "0", ha="center", va="top",
+                       fontsize=6, color="black")
+        for i, (v, is_zero) in enumerate(zip(mod, zero_mask[n:])):
+            if is_zero:
+                ax.plot(x[i] + 0.2, v, marker="o", markersize=4,
+                       color="black", linestyle="none")
+                ax.text(x[i] + 0.2, v, "0", ha="center", va="top",
+                       fontsize=6, color="black")
+
+    # Y range: allow slightly negative if any HNS-normalised value is < 0.
+    allvals = np.concatenate([np.asarray(orig), np.asarray(mod)])
+    fin = allvals[~np.isnan(allvals)]
+    if len(fin):
+        lo, hi = float(fin.min()), float(fin.max())
+        if lo < 0:
+            ax.set_ylim(bottom=lo - 0.05 * (hi - lo))
+        else:
+            ax.set_ylim(bottom=0)
+    else:
+        ax.set_ylim(bottom=0)
     ax.set_title(game)
 
 
@@ -200,6 +241,24 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="drop_plot",
         help="Output filename prefix (default: drop_plot).",
+    )
+    p.add_argument(
+        "--metric",
+        type=str,
+        choices=["aligned", "env"],
+        default="aligned",
+        help="Metric for the Seaquest/Kangaroo panels: 'aligned' (divers / game "
+             "progress, default) or 'env' (environment return). Crafter always "
+             "uses HNS.",
+    )
+    p.add_argument(
+        "--normalize",
+        type=str,
+        choices=["none", "hns"],
+        default="none",
+        help="Normalization for the Seaquest/Kangaroo env-return panels: 'hns' "
+             "converts to human-normalized score (Atari random/human from "
+             "plots.ipynb); only valid with --metric env (default: none).",
     )
     return p.parse_args()
 
@@ -238,20 +297,43 @@ def main() -> None:
         sns.set_style("white")
         fig, axs = plt.subplots(1, 3, figsize=(12, 3))
 
-        # Seaquest + Kangaroo (new data, aligned metrics over all seeds)
+        # Seaquest + Kangaroo (new data, aggregated over all seeds)
+        metric = args.metric
+        if args.normalize == "hns" and metric != "env":
+            print("Error: --normalize hns requires --metric env.", file=sys.stderr)
+            sys.exit(1)
         for ax, game in zip(axs[:2], games):
             algos = [a for a in METHOD_ORDER
                      if a in set(base_agg.loc[base_agg["env_name"] == game, "method"])]
-            orig = [get_vals(base_agg, game, a, "aligned")[0] for a in algos]
-            orig_std = [get_vals(base_agg, game, a, "aligned")[1] for a in algos]
-            mod = [get_vals(mod_agg, game, a, "aligned")[0] for a in algos]
-            mod_std = [get_vals(mod_agg, game, a, "aligned")[1] for a in algos]
-            n_seeds = set(
-                base_agg.loc[base_agg["env_name"] == game, "aligned_n_seeds"]
-            )
-            ylabel = "Divers Rescued" if game == "Seaquest" else "Game Progress"
-            print(f"{game}: n_seeds per method = {sorted(n_seeds)}, methods = {algos}")
-            drop_plot(ax, game, algos, orig, orig_std, mod, mod_std, ylabel)
+            raw_orig = [get_vals(base_agg, game, a, metric)[0] for a in algos]
+            raw_orig_std = [get_vals(base_agg, game, a, metric)[1] for a in algos]
+            raw_mod = [get_vals(mod_agg, game, a, metric)[0] for a in algos]
+            raw_mod_std = [get_vals(mod_agg, game, a, metric)[1] for a in algos]
+
+            zero_mask = [
+                np.isclose(v, 0.0, atol=1e-9) for v in raw_orig + raw_mod
+            ]
+            orig, orig_std, mod, mod_std = raw_orig, raw_orig_std, raw_mod, raw_mod_std
+            if args.normalize == "hns":
+                rnd, hum = ATARI_HUMAN_RANDOM[game.lower()]
+                denom = hum - rnd
+                orig = [(v - rnd) / denom for v in raw_orig]
+                orig_std = [s / denom for s in raw_orig_std]
+                mod = [(v - rnd) / denom for v in raw_mod]
+                mod_std = [s / denom for s in raw_mod_std]
+
+            n_col = f"{metric}_n_seeds"
+            n_seeds = set(base_agg.loc[base_agg["env_name"] == game, n_col])
+            if args.normalize == "hns":
+                ylabel = "HNS"
+            elif metric == "env":
+                ylabel = "Env Return"
+            else:
+                ylabel = "Divers Rescued" if game == "Seaquest" else "Game Progress"
+            print(f"{game} ({metric}, norm={args.normalize}): n_seeds per method = "
+                  f"{sorted(n_seeds)}, methods = {algos}")
+            drop_plot(ax, game, algos, orig, orig_std, mod, mod_std, ylabel,
+                      zero_mask=zero_mask)
 
         # Crafter (HNS, notebook data)
         crafter_algos = CRAFTAX_ALGOS

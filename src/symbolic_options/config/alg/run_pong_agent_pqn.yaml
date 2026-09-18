@@ -22,7 +22,7 @@ LOAD_PATH: "/home/remunds/projects/symbolic_options/models/"
 eval_envs:
   - label: "clean"
     noisy_eval: false
-    lazy_enemy: True
+    lazy_enemy: False
   - label: "mod"
     lazy_enemy: True
     noisy_eval: false

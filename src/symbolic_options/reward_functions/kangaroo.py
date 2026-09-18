@@ -276,7 +276,9 @@ def conditional_meta_policy(network, meta_train_state, last_obs, env_state: Kang
     q_vals = jnp.logical_or(navigation_q, fruit_q) 
     q_vals = jnp.logical_or(q_vals, enemy_q)
 
-    return q_vals
+    # float32 like every other env's conditional policy: jax.lax.cond/switch trace
+    # all branches, so a bool here breaks META_POLICY="conditional"
+    return q_vals.astype(jnp.float32)
 
 def learned_meta_policy(network, meta_train_state, last_obs, env_state: KangarooState):#
     q_vals = network.apply(

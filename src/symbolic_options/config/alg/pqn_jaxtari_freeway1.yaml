@@ -53,7 +53,7 @@ RECORD_VIDEO: True # in terms of total updates
 eval_envs:
   - label: "clean"
     noisy_eval: false
-    stop_random_cars: True
+    stop_random_cars: False
   - label: "mod"
     stop_random_cars: True
     noisy_eval: false

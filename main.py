@@ -30,7 +30,23 @@ def _build_eval_envs(create_env_fn, config):
     return tuple(eval_envs_list)
 
 
-def outer_make_train(config):
+def build_setup(config):
+    """Build the environment(s) and meta-policies described by `config`.
+
+    Shared by `outer_make_train` (training) and `eval_activations.py` (offline
+    evaluation) so that both go through *exactly* the same environment setup.
+    """
+    # not every branch below defines all of these
+    eval_envs = None
+    test_env = None
+    test_env_modif = None
+    env_params = None
+    basic_env = None
+    llm_meta_policy = None
+    learned_meta_policy = None
+    conditional_meta_policy = None
+    combined_meta_policy = None
+
     noisy_training = config.get("NOISY_TRAINING", False)
     detection_probability = config.get("DETECT_PROB", 1.0)
     noise_std_dev = config.get("NOISE_STD_DEV", 0.0)
@@ -345,6 +361,35 @@ def outer_make_train(config):
     else:
         meta_policy = None
 
+    return {
+        "env": env,
+        "eval_envs": eval_envs,
+        "create_env": create_env,
+        "renderer": renderer,
+        "reward_funcs": reward_funcs,
+        "meta_policy": meta_policy,
+        "llm_meta_policy": llm_meta_policy,
+        "learned_meta_policy": learned_meta_policy,
+        "conditional_meta_policy": conditional_meta_policy,
+        "combined_meta_policy": combined_meta_policy,
+        "test_env": test_env,
+        "test_env_modif": test_env_modif,
+        "env_params": env_params,
+        "basic_env": basic_env,
+    }
+
+
+def outer_make_train(config):
+    setup = build_setup(config)
+    env = setup["env"]
+    eval_envs = setup["eval_envs"]
+    renderer = setup["renderer"]
+    meta_policy = setup["meta_policy"]
+    llm_meta_policy = setup["llm_meta_policy"]
+    test_env = setup["test_env"]
+    test_env_modif = setup["test_env_modif"]
+    env_params = setup["env_params"]
+
     if "Craftax" in config.get("ENV_NAME", None):
         from symbolic_options.hierarchical_pqn_craftax import make_train as make_train_hier_craftax
         from symbolic_options.pqn_craftax import make_train as make_train_pqn_craftax
@@ -466,6 +511,31 @@ def single_run(config):#
             save_params(params, save_path)
             save_params(batch_stats, save_path_bs)
             print(f"Saved params to {save_path}")
+
+        # The meta-policy network is only a learned module for the "learned" and
+        # "combined" meta-policies; without it such a run cannot be replayed
+        # offline (see eval_activations.py), so persist it alongside the options.
+        if config.get("HIERARCHICAL", False) and config.get("META_POLICY", "llm") in (
+            "learned",
+            "combined",
+        ):
+            meta_state = outs["runner_state"][1]
+            for i, rng in enumerate(rngs):
+                meta_params = jax.tree_util.tree_map(lambda x: x[i], meta_state.params)
+                meta_batch_stats = jax.tree_util.tree_map(
+                    lambda x: x[i], meta_state.batch_stats
+                )
+                meta_save_path = os.path.join(
+                    save_dir,
+                    f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}_meta.safetensors',
+                )
+                meta_save_path_bs = os.path.join(
+                    save_dir,
+                    f'{alg_name}_{env_name}_seed{config["SEED"]}_vmap{i}_meta_bs.safetensors',
+                )
+                save_params(meta_params, meta_save_path)
+                save_params(meta_batch_stats, meta_save_path_bs)
+                print(f"Saved meta params to {meta_save_path}")
 
     wandb.finish()
 
